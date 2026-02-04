@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Exam Firewall</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<h1>Exam Firewall Dashboard</h1>
+
+<p><strong>Exam Mode:</strong> {{ exam_status }}</p>
+
+<a href="/exam/on"><button>Enable Exam Mode</button></a>
+<a href="/exam/off"><button>Disable Exam Mode</button></a>
+
+<h2>Connected Devices</h2>
+
+<table>
+<tr>
+  <th>IP</th>
+  <th>MAC</th>
+  <th>Status</th>
+  <th>Action</th>
+</tr>
+
+{% for d in devices %}
+<tr>
+  <td>{{ d.ip }}</td>
+  <td>{{ d.mac }}</td>
+  <td>{{ d.state }}</td>
+  <td>
+    <a href="/device/block/{{ d.mac }}">Block</a> |
+    <a href="/device/unblock/{{ d.mac }}">Unblock</a>
+  </td>
+</tr>
+{% endfor %}
+
+</table>
+
+</body>
+</html>

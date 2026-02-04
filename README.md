@@ -9,7 +9,7 @@ It works at the **network level**, so:
 - Works on Windows, macOS, and Linux
 - Students cannot bypass it by changing DNS settings
 
-This system is designed so a **teacher or school IT staff** can use it reliably.
+This system is designed so a **Educator or school IT staff** can use it reliably.
 
 ---
 
@@ -63,7 +63,7 @@ Student Devices
 
 ---
 
-## Step-by-Step Setup Guide (Beginner Friendly)
+## Step-by-Step Setup Guide
 
 ### Step 1: Install Ubuntu Server
 1. Download Ubuntu Server 22.04 LTS
@@ -201,7 +201,7 @@ sudo netfilter-persistent save
 
 ---
 
-## How Teachers Use It (Daily Use)
+## How Educator Use It (Daily Use)
 
 ### Start Exam
 - Plug student devices into the firewall network
@@ -283,9 +283,9 @@ systemctl status dnsmasq
 
 ---
 
-## 🔁 Optional: One-Command Shortcuts (Recommended)
+## 🔁 Optional: One-Command Shortcuts
 
-This makes it **very easy for teachers**.
+This makes it **very easy for you**.
 
 ### Create Exam ON command
 
@@ -332,7 +332,7 @@ sudo chmod +x /usr/local/bin/exam-off
 
 ---
 
-### How to Use (Teacher-Friendly)
+### How to Use 
 
 ```bash
 sudo exam-on

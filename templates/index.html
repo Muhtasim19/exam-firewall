@@ -36,6 +36,14 @@
     <a href="/device/block/{{ d.mac }}">Block</a> |
     <a href="/device/unblock/{{ d.mac }}">Unblock</a>
   </td>
+  <td>
+    {% if device.blocked %}
+        🚫 Blocked
+    {% else %}
+        ✅ Allowed
+    {% endif %}
+  </td>
+
 </tr>
 {% endfor %}
 

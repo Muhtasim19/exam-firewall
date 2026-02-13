@@ -20,19 +20,19 @@ def exam_status():
 def connected_devices():
     devices = []
     leases = {}
+    blocked_macs = get_blocked_macs()
 
+    # Read dnsmasq leases
     try:
         with open("/var/lib/misc/dnsmasq.leases", "r") as f:
             for line in f.readlines():
                 parts = line.split()
                 if len(parts) >= 4:
-                    mac = parts[1]
                     ip = parts[2]
                     hostname = parts[3]
                     leases[ip] = hostname
     except:
         pass
-
 
     output = subprocess.check_output("ip neigh", shell=True, text=True)
 
@@ -41,10 +41,9 @@ def connected_devices():
 
         if "lladdr" in parts:
             ip = parts[0]
-            mac = parts[4]
+            mac = parts[4].lower()
             state = parts[-1]
 
-            
             if ip.startswith("192.168.50."):
                 hostname = leases.get(ip, "Unknown")
 
@@ -52,10 +51,12 @@ def connected_devices():
                     "ip": ip,
                     "mac": mac,
                     "hostname": hostname,
-                    "state": state
+                    "state": state,
+                    "blocked": mac in blocked_macs
                 })
 
     return devices
+
 
 
 def block_device(mac):
@@ -63,3 +64,21 @@ def block_device(mac):
 
 def unblock_device(mac):
     run(f"iptables -D FORWARD -m mac --mac-source {mac} -j DROP")
+
+def get_blocked_macs():
+    blocked = set()
+
+    output = subprocess.check_output(
+        "iptables -L FORWARD -n --line-numbers",
+        shell=True,
+        text=True
+    )
+
+    for line in output.splitlines():
+        if "MAC" in line:
+            parts = line.split()
+            for part in parts:
+                if ":" in part and len(part) == 17:
+                    blocked.add(part.lower())
+
+    return blocked

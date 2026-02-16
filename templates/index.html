@@ -8,12 +8,16 @@
 </head>
 <body>
 
+<div class="curve1"></div>
+<div class="curve2"></div>
+
 <h1>Exam Firewall Dashboard</h1>
 
 <p><strong>Exam Mode:</strong> {{ exam_status }}</p>
 
 <a href="/exam/on"><button>Enable Exam Mode</button></a>
 <a href="/exam/off"><button>Disable Exam Mode</button></a>
+<div class="section-box">
 
 <h2>Connected Devices</h2>
 
@@ -27,6 +31,9 @@
 </tr>
 
 {% for d in devices %}
+<p>
+
+</p>
 <tr>
   <td>{{ d.ip }}</td>
   <td>{{ d.mac }}</td>
@@ -40,6 +47,6 @@
 {% endfor %}
 
 </table>
-
+</div>
 </body>
 </html>

@@ -1,7 +1,15 @@
 import subprocess
 
 def run(cmd):
-    subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        capture_output=True,
+        text=True
+    )
+    print("COMMAND:", cmd)
+    print("STDOUT:", result.stdout)
+    print("STDERR:", result.stderr)
 
 def exam_on():
     run("systemctl start dnsmasq")

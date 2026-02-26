@@ -1,13 +1,9 @@
 import subprocess
 
 def run(cmd):
-    result = subprocess.run(
-        cmd,
-        shell=True,
-        capture_output=True,
-        text=True
-    )
-    print("COMMAND:", cmd)
+    result = subprocess.run(cmd, shell=True, text=True,
+                            capture_output=True)
+    print("CMD:", cmd)
     print("STDOUT:", result.stdout)
     print("STDERR:", result.stderr)
 

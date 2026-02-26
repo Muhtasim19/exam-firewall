@@ -1,11 +1,20 @@
 import subprocess
 
+LAN_PREFIX = "192.168.50."
+
 def run(cmd):
-    result = subprocess.run(cmd, shell=True, text=True,
-                            capture_output=True)
-    print("CMD:", cmd)
-    print("STDOUT:", result.stdout)
-    print("STDERR:", result.stderr)
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        text=True,
+        capture_output=True
+    )
+    return result.stdout.strip()
+
+
+# ==========================
+# Exam Mode Control
+# ==========================
 
 def exam_on():
     run("systemctl start dnsmasq")
@@ -16,25 +25,28 @@ def exam_off():
 def exam_status():
     result = subprocess.run(
         ["systemctl", "is-active", "dnsmasq"],
-        capture_output=True, text=True
+        capture_output=True,
+        text=True
     )
     return result.stdout.strip()
 
 
+# ==========================
+# Device Detection
+# ==========================
+
 def connected_devices():
     devices = []
     leases = {}
-    blocked_macs = get_blocked_macs()
+    blocked_ips = get_blocked_ips()
 
-    # Read dnsmasq leases
+    # Read DHCP leases
     try:
-        with open("/var/lib/misc/dnsmasq.leases", "r") as f:
-            for line in f.readlines():
+        with open("/var/lib/misc/dnsmasq.leases") as f:
+            for line in f:
                 parts = line.split()
                 if len(parts) >= 4:
-                    ip = parts[2]
-                    hostname = parts[3]
-                    leases[ip] = hostname
+                    leases[parts[2]] = parts[3]
     except:
         pass
 
@@ -48,41 +60,37 @@ def connected_devices():
             mac = parts[4].lower()
             state = parts[-1]
 
-            if ip.startswith("192.168.50."):
-                hostname = leases.get(ip, "Unknown")
-
+            if ip.startswith(LAN_PREFIX):
                 devices.append({
                     "ip": ip,
                     "mac": mac,
-                    "hostname": hostname,
+                    "hostname": leases.get(ip, "Unknown"),
                     "state": state,
-                    "blocked": mac in blocked_macs
+                    "blocked": ip in blocked_ips
                 })
 
     return devices
 
 
+# ==========================
+# Blocking Logic (Clean)
+# ==========================
 
 def block_device(ip):
-    run(f"iptables -I FORWARD 1 -s {ip} -j DROP")
+    run(f"iptables -A EXAM_BLOCK -s {ip} -j DROP")
 
 def unblock_device(ip):
-    run(f"iptables -D FORWARD -s {ip} -j DROP")
+    run(f"iptables -D EXAM_BLOCK -s {ip} -j DROP")
 
-def get_blocked_macs():
+def get_blocked_ips():
     blocked = set()
 
-    output = subprocess.check_output(
-        "sudo iptables -L FORWARD -n --line-numbers",
-        shell=True,
-        text=True
-    )
+    output = run("iptables -L EXAM_BLOCK -n")
 
     for line in output.splitlines():
-        if "MAC" in line:
-            parts = line.split()
-            for part in parts:
-                if ":" in part and len(part) == 17:
-                    blocked.add(part.lower())
+        parts = line.split()
+        for part in parts:
+            if part.startswith(LAN_PREFIX):
+                blocked.add(part)
 
     return blocked

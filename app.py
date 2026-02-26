@@ -23,14 +23,14 @@ def exam_off():
     firewall.exam_off()
     return redirect(url_for("index"))
 
-@app.route("/device/block/<mac>")
-def block_device(mac):
-    firewall.block_device(mac)
+@app.route("/device/block/<ip>")
+def block_device(ip):
+    firewall.block_device(ip)
     return redirect(url_for("index"))
 
-@app.route("/device/unblock/<mac>")
-def unblock_device(mac):
-    firewall.unblock_device(mac)
+@app.route("/device/unblock/<ip>")
+def unblock_device(ip):
+    firewall.unblock_device(ip)
     return redirect(url_for("index"))
 
 if __name__ == "__main__":

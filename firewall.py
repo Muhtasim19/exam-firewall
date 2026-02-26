@@ -68,7 +68,7 @@ def connected_devices():
 
 
 def block_device(mac):
-    run(f"iptables -I FORWARD -m mac --mac-source {mac} -j DROP")
+    run(f"iptables -I FORWARD 1 -m mac --mac-source {mac} -j DROP")
 
 def unblock_device(mac):
     run(f"iptables -D FORWARD -m mac --mac-source {mac} -j DROP")

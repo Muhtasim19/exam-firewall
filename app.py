@@ -20,6 +20,7 @@ def login_required(f):
     return decorated_function
 
 
+
 # =========================
 # Login Route (DO NOT PROTECT)
 # =========================
@@ -32,6 +33,11 @@ def login():
             return redirect(url_for("index"))
     return render_template("login.html")
 
+@app.route("/logout")
+@login_required
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 # =========================
 # Protected Routes

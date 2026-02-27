@@ -5,6 +5,10 @@ import firewall
 app = Flask(__name__)
 app.secret_key = "3f8x92Kk29dk29s0dkX"
 
+from datetime import timedelta
+
+app.permanent_session_lifetime = timedelta(minutes=10)
+
 ADMIN_PASSWORD = "exam123"
 
 

@@ -57,11 +57,12 @@ def login():
 # LOGOUT
 # =========================
 @app.route("/logout")
-@login_required
 def logout():
+    session.pop("logged_in", None)
     session.clear()
-    response = redirect(url_for("login"))
-    response.set_cookie("session", "", expires=0)
+
+    response = redirect("/login")
+    response.delete_cookie("session")
     return response
 
 # =========================

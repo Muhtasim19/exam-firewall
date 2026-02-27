@@ -58,9 +58,8 @@ def login():
 # =========================
 @app.route("/logout")
 def logout():
-    session.pop("logged_in", None)
+    print("LOGOUT CALLED")
     session.clear()
-
     response = redirect("/login")
     response.delete_cookie("session")
     return response

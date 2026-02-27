@@ -3,7 +3,7 @@ from functools import wraps
 import firewall
 
 app = Flask(__name__)
-app.secret_key = "CHANGE_THIS_TO_RANDOM_SECRET_KEY"
+app.secret_key = "3f8x92Kk29dk29s0dkX"
 
 ADMIN_PASSWORD = "exam123"
 

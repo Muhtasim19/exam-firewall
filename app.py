@@ -1,16 +1,25 @@
-from flask import Flask, render_template, redirect, url_for, request, session
+from flask import Flask, render_template, redirect, url_for, request, session, make_response
 from functools import wraps
+from datetime import timedelta
 import firewall
 
 app = Flask(__name__)
 app.secret_key = "3f8x92Kk29dk29s0dkX"
 
-from datetime import timedelta
-
+# Session timeout (10 min inactivity)
 app.permanent_session_lifetime = timedelta(minutes=10)
 
 ADMIN_PASSWORD = "exam123"
 
+# =========================
+# Disable Browser Caching
+# =========================
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 # =========================
 # Login Required Decorator
@@ -23,14 +32,16 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-
+# =========================
+# Refresh Session on Activity
+# =========================
 @app.before_request
 def refresh_session():
     if session.get("logged_in"):
         session.permanent = True
 
 # =========================
-# Login Route (DO NOT PROTECT)
+# LOGIN
 # =========================
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -42,14 +53,19 @@ def login():
             return redirect(url_for("index"))
     return render_template("login.html")
 
+# =========================
+# LOGOUT
+# =========================
 @app.route("/logout")
 @login_required
 def logout():
     session.clear()
-    return redirect(url_for("login"))
+    response = redirect(url_for("login"))
+    response.set_cookie("session", "", expires=0)
+    return response
 
 # =========================
-# Protected Routes
+# DASHBOARD
 # =========================
 @app.route("/")
 @login_required
@@ -62,13 +78,14 @@ def index():
         devices=devices
     )
 
-
+# =========================
+# EXAM CONTROL
+# =========================
 @app.route("/exam/on")
 @login_required
 def exam_on():
     firewall.exam_on()
     return redirect(url_for("index"))
-
 
 @app.route("/exam/off")
 @login_required
@@ -76,20 +93,23 @@ def exam_off():
     firewall.exam_off()
     return redirect(url_for("index"))
 
-
-@app.route("/device/block/<ip>")
+# =========================
+# DEVICE CONTROL
+# =========================
+@app.route("/device/block/<mac>")
 @login_required
-def block_device(ip):
-    firewall.block_device(ip)
+def block_device(mac):
+    firewall.block_device(mac)
     return redirect(url_for("index"))
 
-
-@app.route("/device/unblock/<ip>")
+@app.route("/device/unblock/<mac>")
 @login_required
-def unblock_device(ip):
-    firewall.unblock_device(ip)
+def unblock_device(mac):
+    firewall.unblock_device(mac)
     return redirect(url_for("index"))
 
-
+# =========================
+# RUN
+# =========================
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000)

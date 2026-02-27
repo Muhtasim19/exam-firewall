@@ -24,6 +24,10 @@ def login_required(f):
     return decorated_function
 
 
+@app.before_request
+def refresh_session():
+    if session.get("logged_in"):
+        session.permanent = True
 
 # =========================
 # Login Route (DO NOT PROTECT)

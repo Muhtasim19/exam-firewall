@@ -1,7 +1,10 @@
-from flask import Flask, render_template, redirect, url_for
+from flask import Flask, render_template, redirect, url_for, request, session
 import firewall
 
 app = Flask(__name__)
+app.secret_key = "CHANGE_THIS_TO_RANDOM_SECRET_KEY"
+
+ADMIN_PASSWORD = "exam123"
 
 @app.route("/")
 def index():
@@ -32,6 +35,15 @@ def block_device(ip):
 def unblock_device(ip):
     firewall.unblock_device(ip)
     return redirect(url_for("index"))
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        password = request.form.get("password")
+        if password == ADMIN_PASSWORD:
+            session["logged_in"] = True
+            return redirect(url_for("index"))
+    return render_template("login.html")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

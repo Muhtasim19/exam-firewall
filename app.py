@@ -33,6 +33,7 @@ def login():
     if request.method == "POST":
         password = request.form.get("password")
         if password == ADMIN_PASSWORD:
+            session.permanent = True
             session["logged_in"] = True
             return redirect(url_for("index"))
     return render_template("login.html")

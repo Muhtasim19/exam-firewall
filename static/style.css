@@ -109,3 +109,19 @@ tbody tr td:last-child {
   border-top-right-radius: 15px;
   border-bottom-right-radius: 15px;
 }
+
+
+tbody td:last-child {
+  border-right: none;
+}
+
+
+tbody tr td:first-child {
+  border-top-left-radius: 15px;
+  border-bottom-left-radius: 15px;
+}
+
+tbody tr td:last-child {
+  border-top-right-radius: 15px;
+  border-bottom-right-radius: 15px;
+}

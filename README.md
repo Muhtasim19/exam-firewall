@@ -357,8 +357,8 @@ This is **simple, safe, and professional**.
 
 
 ## Project Status
-Tested and working.
-Ready for classroom use.
+Under testing.
+Will be ready for classroom use.
 
 ---
 

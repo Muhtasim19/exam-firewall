@@ -1,3 +1,15 @@
+// =========================
+// AUTO REFRESH (10 seconds)
+// =========================
+setTimeout(function () {
+    window.location.reload();
+}, 10000);
+
+
+// =========================
+// CONFIRM ACTIONS
+// =========================
+document.addEventListener("DOMContentLoaded", function () {
 // 🔥 Random Background Color Blast
 function changeBackground() {
   const colors = [
@@ -35,32 +47,22 @@ document.addEventListener("click", function(e) {
 
   document.body.appendChild(circle);
 
-  setTimeout(() => {
-    circle.remove();
-  }, 600);
+    const blockButtons = document.querySelectorAll("form[action*='block']");
+    blockButtons.forEach(btn => {
+        btn.addEventListener("submit", function (e) {
+            if (!confirm("Are you sure you want to block this device?")) {
+                e.preventDefault();
+            }
+        });
+    });
+
+    const disableExam = document.querySelector("form[action*='exam/off']");
+    if (disableExam) {
+        disableExam.addEventListener("submit", function (e) {
+            if (!confirm("Disable Exam Mode?")) {
+                e.preventDefault();
+            }
+        });
+    }
+
 });
-
-// 💫 Floating Particles
-setInterval(() => {
-  const particle = document.createElement("div");
-  particle.style.position = "fixed";
-  particle.style.width = "5px";
-  particle.style.height = "5px";
-  particle.style.background = "white";
-  particle.style.left = Math.random() * window.innerWidth + "px";
-  particle.style.top = window.innerHeight + "px";
-  particle.style.opacity = "0.7";
-  particle.style.borderRadius = "50%";
-  particle.style.animation = "rise 5s linear forwards";
-
-  document.body.appendChild(particle);
-
-  setTimeout(() => {
-    particle.remove();
-  }, 5000);
-}, 300);
-
-// 🎉 Welcome Popup
-window.onload = function() {
-  alert("Welcome to the CRAZY WEBSITE 😎🔥");
-};

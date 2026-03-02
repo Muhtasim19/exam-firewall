@@ -24,13 +24,18 @@ def run_safe(cmd):
 # ==========================
 
 def ensure_chain():
+    # Create chain if not exists
     chains = run("iptables -L")
     if EXAM_CHAIN not in chains:
         run_safe(f"iptables -N {EXAM_CHAIN}")
 
+    # Make sure RELATED,ESTABLISHED is allowed FIRST
+    run_safe("iptables -C FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT || iptables -I FORWARD 1 -m state --state RELATED,ESTABLISHED -j ACCEPT")
+
+    # Attach EXAM_BLOCK safely (only once)
     forward_rules = run("iptables -L FORWARD")
     if EXAM_CHAIN not in forward_rules:
-        run_safe(f"iptables -I FORWARD -j {EXAM_CHAIN}")
+        run_safe(f"iptables -A FORWARD -j {EXAM_CHAIN}")
 
 # ==========================
 # Exam Mode Control (dnsmasq)

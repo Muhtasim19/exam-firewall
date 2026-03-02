@@ -28,7 +28,8 @@
   <th>IP</th>
   <th>MAC</th>
   <th>Hostname</th>
-  <th>Status</th>
+  <th>State</th>
+  <th>Firewall</th>
   <th>Action</th>
 </tr>
 
@@ -40,20 +41,22 @@
   <td>{{ d.state }}</td>
 
   <td>
-    <a href="/device/block/{{ d.mac }}">Block</a> |
-    <a href="/device/unblock/{{ d.mac }}">Unblock</a>
-  </td>
-
-  <td>
     {% if d.blocked %}
         🚫 Blocked
     {% else %}
         ✅ Allowed
     {% endif %}
   </td>
+
+  <td>
+    {% if d.blocked %}
+        <a href="/device/unblock/{{ d.ip }}">Unblock</a>
+    {% else %}
+        <a href="/device/block/{{ d.ip }}">Block</a>
+    {% endif %}
+  </td>
 </tr>
 {% endfor %}
-
 </table>
 </div>
 

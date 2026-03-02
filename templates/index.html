@@ -1,71 +1,97 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Exam Firewall</title>
-  <link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <title>Exam Firewall Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
 <body>
 
-<a href="/logout" style="float:right;">Logout</a>
-
-<div class="curve1"></div>
-<div class="curve2"></div>
+<div style="text-align:right;">
+    <a href="{{ url_for('logout') }}" style="text-decoration:none;font-weight:bold;">
+        🔒 Logout
+    </a>
+</div>
 
 <h1>Exam Firewall Dashboard</h1>
 
-<p><strong>Exam Mode:</strong> {{ exam_status }}</p>
+<div class="section-box">
 
-<a href="/exam/on"><button>Enable Exam Mode</button></a>
-<a href="/exam/off"><button>Disable Exam Mode</button></a>
+    <h2>Exam Mode Control</h2>
+
+    <p>
+        <strong>Status:</strong>
+        {% if exam_status == "active" %}
+            <span style="color:green;font-weight:bold;">ACTIVE</span>
+        {% else %}
+            <span style="color:red;font-weight:bold;">INACTIVE</span>
+        {% endif %}
+    </p>
+
+    <form action="{{ url_for('exam_on') }}" method="get" style="display:inline;">
+        <button type="submit">Enable Exam Mode</button>
+    </form>
+
+    <form action="{{ url_for('exam_off') }}" method="get" style="display:inline;">
+        <button type="submit">Disable Exam Mode</button>
+    </form>
+
+</div>
+
 
 <div class="section-box">
 
-<h2>Connected Devices</h2>
+    <h2>Connected Devices</h2>
 
-<table>
-<tr>
-  <th>IP</th>
-  <th>MAC</th>
-  <th>Hostname</th>
-  <th>State</th>
-  <th>Firewall</th>
-  <th>Action</th>
-</tr>
+    <table>
+        <thead>
+            <tr>
+                <th>IP Address</th>
+                <th>MAC Address</th>
+                <th>Hostname</th>
+                <th>Network State</th>
+                <th>Firewall Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
 
-{% for d in devices %}
-<tr>
-  <td>{{ d.ip }}</td>
-  <td>{{ d.mac }}</td>
-  <td>{{ d.hostname }}</td>
-  <td>{{ d.state }}</td>
+        <tbody>
+        {% for d in devices %}
+            <tr>
+                <td>{{ d.ip }}</td>
+                <td>{{ d.mac }}</td>
+                <td>{{ d.hostname }}</td>
+                <td>{{ d.state }}</td>
 
-  <td>
-    {% if d.blocked %}
-        🚫 Blocked
-    {% else %}
-        ✅ Allowed
-    {% endif %}
-  </td>
+                <td>
+                    {% if d.blocked %}
+                        <span style="color:red;font-weight:bold;">Blocked</span>
+                    {% else %}
+                        <span style="color:green;font-weight:bold;">Allowed</span>
+                    {% endif %}
+                </td>
 
-  <td>
-    {% if d.blocked %}
-        <a href="/device/unblock/{{ d.ip }}">Unblock</a>
-    {% else %}
-        <a href="/device/block/{{ d.ip }}">Block</a>
-    {% endif %}
-  </td>
-</tr>
-{% endfor %}
-</table>
+                <td>
+                    {% if d.blocked %}
+                        <form action="{{ url_for('unblock_device', ip=d.ip) }}" method="get">
+                            <button type="submit">Unblock</button>
+                        </form>
+                    {% else %}
+                        <form action="{{ url_for('block_device', ip=d.ip) }}" method="get">
+                            <button type="submit">Block</button>
+                        </form>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+
+    </table>
+
 </div>
 
-<!-- Auto refresh every 5 seconds -->
-<!-- <script>
-setTimeout(function(){
-    window.location.reload();
-}, 5000);
-</script> -->
+<script src="{{ url_for('static', filename='script.js') }}"></script>
 
 </body>
 </html>

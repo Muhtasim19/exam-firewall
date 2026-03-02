@@ -9,7 +9,9 @@ app.secret_key = "3f8x92Kk29dk29s0dkX"
 # Session timeout (10 min inactivity)
 app.permanent_session_lifetime = timedelta(minutes=10)
 
-ADMIN_PASSWORD = "exam123"
+from werkzeug.security import generate_password_hash, check_password_hash
+
+ADMIN_PASSWORD_HASH = "scrypt:32768:8:1$HfFB1ZMCjYvHQ5wD$fb02e9e3be4c6e9053a2dac4a1099b7387fcf36b19fccc97dec1e6b38114fe6e9f853aabe626403573a270df28e6da53d8a67eb17124d094f25b0fec4f50a790"
 
 # =========================
 # Disable Browser Caching

@@ -1,6 +1,11 @@
 import subprocess
 
 LAN_PREFIX = "192.168.50."
+EXAM_CHAIN = "EXAM_BLOCK"
+
+# ==========================
+# Utility
+# ==========================
 
 def run(cmd):
     result = subprocess.run(
@@ -11,16 +16,31 @@ def run(cmd):
     )
     return result.stdout.strip()
 
+def run_safe(cmd):
+    subprocess.run(cmd, shell=True)
 
 # ==========================
-# Exam Mode Control
+# Ensure EXAM_BLOCK Chain Exists
+# ==========================
+
+def ensure_chain():
+    chains = run("iptables -L")
+    if EXAM_CHAIN not in chains:
+        run_safe(f"iptables -N {EXAM_CHAIN}")
+
+    forward_rules = run("iptables -L FORWARD")
+    if EXAM_CHAIN not in forward_rules:
+        run_safe(f"iptables -I FORWARD -j {EXAM_CHAIN}")
+
+# ==========================
+# Exam Mode Control (dnsmasq)
 # ==========================
 
 def exam_on():
-    run("systemctl start dnsmasq")
+    run_safe("systemctl start dnsmasq")
 
 def exam_off():
-    run("systemctl stop dnsmasq")
+    run_safe("systemctl stop dnsmasq")
 
 def exam_status():
     result = subprocess.run(
@@ -30,12 +50,13 @@ def exam_status():
     )
     return result.stdout.strip()
 
-
 # ==========================
 # Device Detection
 # ==========================
 
 def connected_devices():
+    ensure_chain()
+
     devices = []
     leases = {}
     blocked_ips = get_blocked_ips()
@@ -71,21 +92,24 @@ def connected_devices():
 
     return devices
 
-
 # ==========================
-# Blocking Logic (Clean)
+# Blocking Logic (Safe)
 # ==========================
 
 def block_device(ip):
-    run(f"iptables -A EXAM_BLOCK -s {ip} -j DROP")
+    ensure_chain()
+
+    blocked_ips = get_blocked_ips()
+    if ip not in blocked_ips:
+        run_safe(f"iptables -A {EXAM_CHAIN} -s {ip} -j DROP")
 
 def unblock_device(ip):
-    run(f"iptables -D EXAM_BLOCK -s {ip} -j DROP")
+    run_safe(f"iptables -D {EXAM_CHAIN} -s {ip} -j DROP")
 
 def get_blocked_ips():
     blocked = set()
 
-    output = run("iptables -L EXAM_BLOCK -n")
+    output = run(f"iptables -L {EXAM_CHAIN} -n")
 
     for line in output.splitlines():
         parts = line.split()

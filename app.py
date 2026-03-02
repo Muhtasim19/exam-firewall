@@ -136,10 +136,11 @@ def exam_off():
 # =========================
 # DEVICE CONTROL
 # =========================
-@app.route("/device/block/<mac>")
+@app.route("/device/block/<ip>")
 @login_required
-def block_device(mac):
-    firewall.block_device(mac)
+def block_device(ip):
+    print("BLOCK ROUTE HIT:", ip)
+    firewall.block_device(ip)
     return redirect(url_for("index"))
 
 @app.route("/device/unblock/<mac>")

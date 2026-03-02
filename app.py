@@ -49,10 +49,12 @@ def refresh_session():
 def login():
     if request.method == "POST":
         password = request.form.get("password")
-        if password == ADMIN_PASSWORD:
+
+        if check_password_hash(ADMIN_PASSWORD_HASH, password):
             session.permanent = True
             session["logged_in"] = True
             return redirect(url_for("index"))
+
     return render_template("login.html")
 
 # =========================

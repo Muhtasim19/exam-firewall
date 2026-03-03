@@ -23,67 +23,89 @@ def run_safe(cmd):
 
 
 # ==========================
-# Firewall Chain Setup
+# Firewall Setup
 # ==========================
 
 def ensure_chain():
-    """
-    Ensures:
-    - EXAM_BLOCK chain exists
-    - ESTABLISHED traffic allowed
-    - EXAM_BLOCK attached safely to FORWARD
-    """
-
-    # Create custom chain if not exists
+    # Create chain if missing
     chains = run("iptables -L")
     if EXAM_CHAIN not in chains:
         run_safe(f"iptables -N {EXAM_CHAIN}")
 
-    # Allow established connections FIRST (critical)
+    # Always allow established connections FIRST
     run_safe(
         "iptables -C FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT "
         "|| iptables -I FORWARD 1 -m state --state RELATED,ESTABLISHED -j ACCEPT"
     )
 
-    # Attach EXAM_BLOCK only once
+    # Attach chain once
     forward_rules = run("iptables -L FORWARD")
     if EXAM_CHAIN not in forward_rules:
-        run_safe(f"iptables -A FORWARD -j {EXAM_CHAIN}")
+        run_safe(f"iptables -I FORWARD 2 -j {EXAM_CHAIN}")
+
+    # IMPORTANT: Ensure chain ends with RETURN
+    chain_rules = run(f"iptables -L {EXAM_CHAIN}")
+    if "RETURN" not in chain_rules:
+        run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
 
 
 # ==========================
-# Exam Mode Control
+# Exam Mode
 # ==========================
 
 def exam_on():
-    """
-    Exam mode ON:
-    - Ensure firewall chain is active
-    - Keep network routing normal
-    """
     ensure_chain()
 
 
 def exam_off():
-    """
-    Exam mode OFF:
-    - Flush EXAM_BLOCK rules (unblock everyone)
-    """
+    # Flush only DROP rules (not RETURN)
     run_safe(f"iptables -F {EXAM_CHAIN}")
+    run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
 
 
 def exam_status():
-    """
-    Exam is active if EXAM_BLOCK chain has rules
-    """
     output = run(f"iptables -L {EXAM_CHAIN} -n")
     lines = output.splitlines()
 
-    # If more than header lines exist → rules present
-    if len(lines) > 2:
+    # Count DROP rules
+    drops = [line for line in lines if "DROP" in line]
+
+    if drops:
         return "active"
-    else:
-        return "inactive"
+    return "inactive"
+
+
+# ==========================
+# Device Blocking
+# ==========================
+
+def block_device(ip):
+    ensure_chain()
+
+    run_safe(
+        f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP "
+        f"|| iptables -I {EXAM_CHAIN} 1 -s {ip} -j DROP"
+    )
+
+
+def unblock_device(ip):
+    run_safe(
+        f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP "
+        f"&& iptables -D {EXAM_CHAIN} -s {ip} -j DROP"
+    )
+
+
+def get_blocked_ips():
+    blocked = set()
+    output = run(f"iptables -L {EXAM_CHAIN} -n")
+
+    for line in output.splitlines():
+        parts = line.split()
+        for part in parts:
+            if part.startswith(LAN_PREFIX):
+                blocked.add(part)
+
+    return blocked
 
 
 # ==========================
@@ -94,18 +116,7 @@ def connected_devices():
     ensure_chain()
 
     devices = []
-    leases = {}
     blocked_ips = get_blocked_ips()
-
-    # Read DHCP leases (if using dnsmasq)
-    try:
-        with open("/var/lib/misc/dnsmasq.leases") as f:
-            for line in f:
-                parts = line.split()
-                if len(parts) >= 4:
-                    leases[parts[2]] = parts[3]
-    except:
-        pass
 
     output = subprocess.check_output("ip neigh", shell=True, text=True)
 
@@ -121,57 +132,9 @@ def connected_devices():
                 devices.append({
                     "ip": ip,
                     "mac": mac,
-                    "hostname": leases.get(ip, "Unknown"),
+                    "hostname": "Unknown",
                     "state": state,
                     "blocked": ip in blocked_ips
                 })
 
     return devices
-
-
-# ==========================
-# Blocking Logic (Safe)
-# ==========================
-
-def block_device(ip):
-    ensure_chain()
-
-    # Prevent duplicate rules
-    run_safe(
-        f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP "
-        f"|| iptables -A {EXAM_CHAIN} -s {ip} -j DROP"
-    )
-
-
-def unblock_device(ip):
-    run_safe(
-        f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP "
-        f"&& iptables -D {EXAM_CHAIN} -s {ip} -j DROP"
-    )
-
-
-def get_blocked_ips():
-    blocked = set()
-
-    output = run(f"iptables -L {EXAM_CHAIN} -n")
-
-    for line in output.splitlines():
-        parts = line.split()
-        for part in parts:
-            if part.startswith(LAN_PREFIX):
-                blocked.add(part)
-
-    return blocked
-
-
-# ==========================
-# Emergency Reset (Optional)
-# ==========================
-
-def reset_firewall():
-    """
-    Completely removes EXAM_BLOCK chain
-    """
-    run_safe(f"iptables -F {EXAM_CHAIN}")
-    run_safe(f"iptables -D FORWARD -j {EXAM_CHAIN}")
-    run_safe(f"iptables -X {EXAM_CHAIN}")

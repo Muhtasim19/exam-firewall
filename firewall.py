@@ -21,8 +21,7 @@ def run(cmd):
 
 
 def run_safe(cmd):
-    subprocess.run(cmd, shell=True)
-
+    subprocess.run(f"sudo {cmd}", shell=True)
 
 # ==========================
 # Firewall Setup
@@ -58,11 +57,18 @@ def ensure_chain():
 def exam_on():
     ensure_chain()
 
+    # Enable DNS blocking
+    run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
+    run_safe("systemctl restart dnsmasq")
 
 def exam_off():
-    # Flush only DROP rules (not RETURN)
+    # Remove IP blocks
     run_safe(f"iptables -F {EXAM_CHAIN}")
     run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
+
+    # Disable DNS blocking
+    run_safe(f"rm -f {DNS_BLOCK_FILE}")
+    run_safe("systemctl restart dnsmasq")
 
 
 def exam_status():

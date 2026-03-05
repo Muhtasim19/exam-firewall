@@ -24,7 +24,7 @@ def run(cmd):
 
 
 def run_safe(cmd):
-    subprocess.run(f"sudo {cmd}", shell=True)
+    subprocess.run(cmd, shell=True)
 
 
 # ==========================

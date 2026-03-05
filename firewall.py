@@ -3,6 +3,8 @@ import subprocess
 LAN_PREFIX = "192.168.50."
 EXAM_CHAIN = "EXAM_BLOCK"
 
+DNS_BLOCK_FILE = "/etc/dnsmasq.d/blocked.conf"
+DNS_SOURCE_FILE = "dns/blocked_domains.conf"
 
 # ==========================
 # Utility
@@ -122,7 +124,8 @@ def connected_devices():
 
     for line in output.splitlines():
         parts = line.split()
-
+DNS_BLOCK_FILE = "/etc/dnsmasq.d/blocked.conf"
+DNS_SOURCE_FILE = "dns/blocked_domains.conf"
         if "lladdr" in parts:
             ip = parts[0]
             mac = parts[4].lower()

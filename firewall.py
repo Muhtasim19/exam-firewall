@@ -83,6 +83,36 @@ def exam_status():
     return "inactive"
 
 
+def get_dhcp_hostnames():
+    hostnames = {}
+    try:
+        with open("/var/lib/dhcp/dhcpd.leases", "r") as f:
+            content = f.read()
+
+        blocks = content.split("lease ")
+
+        for block in blocks:
+            if "hardware ethernet" in block and "client-hostname" in block:
+                lines = block.splitlines()
+                ip = lines[0].strip().replace("{", "")
+
+                mac = ""
+                hostname = ""
+
+                for line in lines:
+                    if "hardware ethernet" in line:
+                        mac = line.split()[-1].replace(";", "").lower()
+                    if "client-hostname" in line:
+                        hostname = line.split()[-1].replace(";", "").replace('"', "")
+
+                if ip and hostname:
+                    hostnames[ip] = hostname
+
+    except:
+        pass
+
+    return hostnames
+    
 # ==========================
 # Device Blocking
 # ==========================
@@ -125,13 +155,13 @@ def connected_devices():
 
     devices = []
     blocked_ips = get_blocked_ips()
+    hostnames = get_dhcp_hostnames()
 
     output = subprocess.check_output("ip neigh", shell=True, text=True)
 
     for line in output.splitlines():
         parts = line.split()
-DNS_BLOCK_FILE = "/etc/dnsmasq.d/blocked.conf"
-DNS_SOURCE_FILE = "dns/blocked_domains.conf"
+
         if "lladdr" in parts:
             ip = parts[0]
             mac = parts[4].lower()
@@ -141,7 +171,7 @@ DNS_SOURCE_FILE = "dns/blocked_domains.conf"
                 devices.append({
                     "ip": ip,
                     "mac": mac,
-                    "hostname": "Unknown",
+                    "hostname": hostnames.get(ip, "Unknown"),
                     "state": state,
                     "blocked": ip in blocked_ips
                 })

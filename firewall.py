@@ -16,17 +16,15 @@ DNS_SOURCE_FILE = "dns/blocked_domains.conf"
 
 def run(cmd):
     result = subprocess.run(
-        cmd,
+        f"sudo {cmd}",
         shell=True,
         text=True,
         capture_output=True
     )
     return result.stdout.strip()
 
-
 def run_safe(cmd):
-    subprocess.run(cmd, shell=True)
-
+    subprocess.run(f"sudo {cmd}", shell=True)
 
 # ==========================
 # Firewall Setup

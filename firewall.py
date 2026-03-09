@@ -5,6 +5,7 @@ LAN_PREFIX = "192.168.50."
 EXAM_CHAIN = "EXAM_BLOCK"
 
 # DNS blocking
+# WRONG - dnsmasq won't find this
 DNS_BLOCK_FILE = "/etc/dnsmasq.d/exam-block.conf"
 DNS_SOURCE_FILE = "dns/blocked_domains.conf"
 

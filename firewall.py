@@ -101,7 +101,6 @@ def exam_status():
 # ==========================
 
 def get_dhcp_hostnames():
-
     hostnames = {}
 
     try:
@@ -111,25 +110,21 @@ def get_dhcp_hostnames():
         blocks = content.split("lease ")
 
         for block in blocks:
+            if "hardware ethernet" not in block:
+                continue
 
-            if "hardware ethernet" in block:
+            lines = block.splitlines()
+            ip = lines[0].strip().strip("{").strip()
 
-                lines = block.splitlines()
-                ip = lines[0].strip().replace("{", "")
+            hostname = ""
 
-                mac = ""
-                hostname = ""
+            for line in lines:
+                if "client-hostname" in line:
+                    hostname = line.split()[-1].replace(";", "").replace('"', "")
 
-                for line in lines:
-
-                    if "hardware ethernet" in line:
-                        mac = line.split()[-1].replace(";", "").lower()
-
-                    if "client-hostname" in line:
-                        hostname = line.split()[-1].replace(";", "").replace('"', "")
-
-                if ip and hostname:
-                    hostnames[ip] = hostname
+            # Only update if hostname exists (keeps most recent)
+            if ip and hostname:
+                hostnames[ip] = hostname
 
     except:
         pass

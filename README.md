@@ -1,21 +1,20 @@
 # Linux Exam Firewall
 
 ## Overview
-Linux Exam Firewall is a network-based system that blocks access to AI tools,
-gaming websites, and entertainment platforms during quizzes or exams.
+Linux Exam Firewall is a network-based firewall system that blocks access to AI tools,
+gaming websites, and entertainment platforms during school exams and quizzes.
 
 It works at the **network level**, so:
 - No software is installed on student devices
 - Works on Windows, macOS, and Linux
-- Students cannot bypass it by changing DNS settings
-
-This system is designed so a **Educator or school IT staff** can use it reliably.
+- Students cannot bypass it by changing their DNS settings
+- Controlled entirely from a **web dashboard**
 
 ---
 
 ## Why Use This System
 During exams, students may try to access:
-- AI tools (ChatGPT, OpenAI, Gemini, etc.)
+- AI tools (ChatGPT, OpenAI, Gemini, Claude, etc.)
 - Online games (chess.com, lichess)
 - Streaming sites (Netflix, YouTube)
 
@@ -26,40 +25,72 @@ This firewall enforces rules **before traffic reaches the internet**.
 
 ## What This System Does
 - Acts as a gateway between students and the internet
-- Automatically gives IP addresses to student devices
-- Forces all DNS requests through the firewall
-- Blocks selected websites
-- Allows normal educational websites
+- Automatically assigns IP addresses to student devices (DHCP)
+- Forces all DNS requests through the firewall (DNS hijacking)
+- Blocks selected websites using dnsmasq DNS filtering
+- Detects connected devices with IP, MAC, and hostname
+- Allows individual device blocking/unblocking
+- Web dashboard with login, exam mode toggle, and device control
+- Blocked domain list managed from GitHub
 
 ---
 
 ## Hardware Requirements
-- 1 PC running Ubuntu Server (22.04 LTS recommended)
+- 1 PC running Ubuntu Server 22.04 LTS
 - 2 Ethernet ports:
-  - **WAN**: connected to the internet
-  - **LAN**: connected to student devices (direct cable or switch)
+  - **WAN** (`enp2s0`): connected to the internet router
+  - **LAN** (`eno1`): connected to student devices via switch
 
 ---
 
 ## Network Layout
 
-Internet  
-│  
-Router / Modem  
-│  
-Linux Firewall Server  
-│  
-Ethernet / Switch  
-│  
-Student Devices  
+```
+Internet
+│
+Router / Modem  (10.10.32.1)
+│
+Linux Firewall Server  (WAN: 10.10.32.71 / LAN: 192.168.50.1)
+│
+Ethernet Switch
+│
+Student Devices  (192.168.50.100 – 192.168.50.254)
+```
 
 ---
 
 ## Software Used
 - Ubuntu Server 22.04 LTS
-- iptables (firewall & routing)
-- dnsmasq (DNS filtering + DHCP)
-- iptables-persistent (save firewall rules)
+- `iptables` — firewall, routing, device blocking
+- `isc-dhcp-server` — assigns IPs to student devices
+- `dnsmasq` — DNS filtering (blocks websites)
+- `netfilter-persistent` — saves firewall rules across reboots
+- `Flask` — web dashboard backend
+- `Python 3` — firewall logic
+
+---
+
+## Project Structure
+
+```
+exam-firewall/
+│
+├── dns/
+│   └── blocked_domains.conf       ← Website block list (edit this on GitHub)
+│
+├── static/
+│   ├── script.js
+│   └── style.css
+│
+├── templates/
+│   ├── index.html                 ← Main dashboard
+│   └── login.html                 ← Admin login page
+│
+├── app.py                         ← Flask web application
+├── firewall.py                    ← Firewall & DNS logic
+├── requirements.txt
+└── README.md
+```
 
 ---
 
@@ -68,300 +99,270 @@ Student Devices
 ### Step 1: Install Ubuntu Server
 1. Download Ubuntu Server 22.04 LTS
 2. Install it on the firewall PC
-3. During setup:
-   - Enable OpenSSH (optional but helpful)
-   - No desktop environment needed
+3. Enable OpenSSH during setup (recommended)
 
 ---
 
 ### Step 2: Identify Network Interfaces
-Run:
 ```bash
 ip a
 ```
-
-You will see two Ethernet interfaces:
-- One connected to the internet (example: `enp2s0`)
-- One connected to students (example: `eno1`)
-
-Write these down.
+Note your two interfaces:
+- Internet-facing (example: `enp2s0`)
+- Student-facing (example: `eno1`)
 
 ---
 
-### Step 3: Enable Internet Forwarding
+### Step 3: Enable IP Forwarding
 ```bash
 sudo sysctl -w net.ipv4.ip_forward=1
+```
+
+To make it permanent:
+```bash
+sudo nano /etc/sysctl.conf
+# Uncomment or add:
+net.ipv4.ip_forward=1
 ```
 
 ---
 
 ### Step 4: Set Up NAT (Internet Sharing)
-Replace `enp2s0` with your **internet interface**:
 ```bash
 sudo iptables -t nat -A POSTROUTING -o enp2s0 -j MASQUERADE
-```
-
----
-
-### Step 5: Allow Traffic Forwarding
-Replace interface names if needed:
-```bash
 sudo iptables -A FORWARD -i eno1 -o enp2s0 -j ACCEPT
 sudo iptables -A FORWARD -i enp2s0 -o eno1 -m state --state RELATED,ESTABLISHED -j ACCEPT
 ```
 
 ---
 
-### Step 6: Install dnsmasq
+### Step 5: Install isc-dhcp-server
 ```bash
 sudo apt update
+sudo apt install isc-dhcp-server -y
+```
+
+Configure `/etc/dhcp/dhcpd.conf`:
+```
+subnet 192.168.50.0 netmask 255.255.255.0 {
+  range 192.168.50.100 192.168.50.200;
+  option routers 192.168.50.1;
+  option domain-name-servers 192.168.50.1;
+  default-lease-time 600;
+  max-lease-time 600;
+}
+```
+
+---
+
+### Step 6: Install and Configure dnsmasq
+```bash
 sudo apt install dnsmasq -y
 ```
 
+Edit `/etc/dnsmasq.conf` and enable:
+```
+conf-dir=/etc/dnsmasq.d/,*.conf
+```
+
+> ⚠️ Make sure this line is **uncommented** (no `#` at the start).
+
 ---
 
-### Step 7: Configure dnsmasq
-Edit the config file:
+### Step 7: Force All DNS Through Firewall
 ```bash
-sudo nano /etc/dnsmasq.conf
+sudo iptables -t nat -A PREROUTING -i eno1 -p udp --dport 53 -j REDIRECT --to-ports 53
+sudo iptables -t nat -A PREROUTING -i eno1 -p tcp --dport 53 -j REDIRECT --to-ports 53
 ```
 
-Add the following:
-
-```
-interface=eno1
-bind-interfaces
-
-# DHCP (automatic IPs for students)
-dhcp-range=192.168.50.10,192.168.50.50,12h
-dhcp-option=option:router,192.168.50.1
-dhcp-option=option:dns-server,192.168.50.1
-
-# Upstream DNS
-server=8.8.8.8
-server=1.1.1.1
-```
-
-Save:
-- CTRL + O → ENTER
-- CTRL + X
-
-Restart:
+Block external DNS servers:
 ```bash
-sudo systemctl restart dnsmasq
+sudo iptables -A FORWARD -i eno1 -d 8.8.8.8 -j DROP
+sudo iptables -A FORWARD -i eno1 -d 1.1.1.1 -j DROP
+sudo iptables -A FORWARD -i eno1 -d 8.8.4.4 -j DROP
+sudo iptables -A FORWARD -i eno1 -d 9.9.9.9 -j DROP
 ```
 
 ---
 
-### Step 8: Add Blocked Websites
-Create a block list:
+### Step 8: Save Firewall Rules
 ```bash
-sudo nano /etc/dnsmasq.d/blocked.conf
-```
-
-Example blocked sites:
-
-```
-# AI tools
-address=/chatgpt.com/0.0.0.0
-address=/openai.com/0.0.0.0
-address=/claude.ai/0.0.0.0
-address=/perplexity.ai/0.0.0.0
-address=/copilot.microsoft.com/0.0.0.0
-
-# Streaming
-address=/netflix.com/0.0.0.0
-address=/youtube.com/0.0.0.0
-
-# Games
-address=/chess.com/0.0.0.0
-address=/lichess.org/0.0.0.0
-```
-
-Restart dnsmasq:
-```bash
-sudo systemctl restart dnsmasq
-```
-
----
-
-### Step 9: Allow DNS Requests to Firewall
-```bash
-sudo iptables -I INPUT -i eno1 -p udp --dport 53 -j ACCEPT
-sudo iptables -I INPUT -i eno1 -p tcp --dport 53 -j ACCEPT
-```
-
----
-
-### Step 10: Save Firewall Rules
-```bash
-sudo apt install iptables-persistent -y
+sudo apt install netfilter-persistent -y
 sudo netfilter-persistent save
 ```
 
 ---
 
-## How Educator Use It (Daily Use)
-
-### Start Exam
-- Plug student devices into the firewall network
-- Devices automatically get internet access
-- Blocked sites are unavailable
-
-### End Exam
-- Unplug student devices
-- Or stop dnsmasq:
+### Step 9: Clone the Project
 ```bash
-sudo systemctl stop dnsmasq
+cd ~
+git clone https://github.com/Muhtasim19/exam-firewall.git
+cd exam-firewall/exam-firewall
 ```
 
 ---
 
-## Supported Devices
-✔ Windows  
-✔ macOS  
-✔ Linux  
-
----
-
-### Advance
----
-
-## 🔘 Turning the Firewall ON and OFF (Exam Mode)
-
-
----
-
-
-### 🔹 Exam Mode ON (Block AI, Games, Streaming)
-
-This enables the firewall, DNS blocking, and automatic IP assignment.
-
-On the **Linux server**, run:
-
+### Step 10: Set Up Python Environment
 ```bash
-sudo systemctl start dnsmasq
-sudo netfilter-persistent reload
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-✅ Result:
-
-* Students get internet automatically
-* Blocked websites are inaccessible
-* Works immediately
-
 ---
 
-### 🔹 Exam Mode OFF (Normal Internet)
-
-This disables DNS filtering and returns the network to normal.
-
-On the **Linux server**, run:
+### Step 11: Configure sudoers (Required for Dashboard)
+The dashboard needs to run iptables and systemctl without password prompts.
 
 ```bash
-sudo systemctl stop dnsmasq
+sudo visudo
 ```
 
-✅ Result:
-
-* DNS blocking stops
-* Students will not have internet through this firewall
-* Safe way to end an exam
-
----
-
-### 🔹 Check Current Status
-
-To see whether Exam Mode is ON or OFF:
-
-```bash
-systemctl status dnsmasq
+Add at the bottom (replace `admin_luniux` with your username):
+```
+admin_luniux ALL=(ALL) NOPASSWD: /sbin/iptables
+admin_luniux ALL=(ALL) NOPASSWD: /usr/bin/systemctl
+admin_luniux ALL=(ALL) NOPASSWD: /bin/cp
+admin_luniux ALL=(ALL) NOPASSWD: /bin/rm
 ```
 
-* `active (running)` → **Exam Mode ON**
-* `inactive (dead)` → **Exam Mode OFF**
-
 ---
 
-## 🔁 Optional: One-Command Shortcuts
-
-This makes it **very easy for you**.
-
-### Create Exam ON command
-
+### Step 12: Set Up Systemd Service (Auto-start)
 ```bash
-sudo nano /usr/local/bin/exam-on
+sudo nano /etc/systemd/system/exam-dashboard.service
 ```
 
 Paste:
+```ini
+[Unit]
+Description=Exam Firewall Dashboard
+After=network.target
 
-```bash
-#!/bin/bash
-systemctl start dnsmasq
-netfilter-persistent reload
-echo "Exam Mode ENABLED"
+[Service]
+User=root
+WorkingDirectory=/home/admin_luniux/exam-firewall/exam-firewall
+ExecStart=/home/admin_luniux/exam-firewall/exam-firewall/venv/bin/python3 app.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-Save, then:
-
+Enable and start:
 ```bash
-sudo chmod +x /usr/local/bin/exam-on
-```
-
----
-
-### Create Exam OFF command
-
-```bash
-sudo nano /usr/local/bin/exam-off
-```
-
-Paste:
-
-```bash
-#!/bin/bash
-systemctl stop dnsmasq
-echo "Exam Mode DISABLED"
-```
-
-Save, then:
-
-```bash
-sudo chmod +x /usr/local/bin/exam-off
+sudo systemctl daemon-reload
+sudo systemctl enable exam-dashboard
+sudo systemctl start exam-dashboard
 ```
 
 ---
 
-### How to Use 
+## Daily Use (After Setup)
 
-```bash
-sudo exam-on
+### Access the Dashboard
+Open a browser and go to:
+```
+http://192.168.50.1:5000
 ```
 
-➡️ Starts exam mode
+Login with your admin password.
 
+---
+
+### Update Blocked Websites
+Edit `dns/blocked_domains.conf` on GitHub, then on the server:
 ```bash
-sudo exam-off
+cd ~/exam-firewall/exam-firewall
+git pull
+sudo systemctl restart exam-dashboard
 ```
 
-➡️ Ends exam mode
+Then toggle Exam Mode off and on from the dashboard to reload the new list.
 
-This is **simple, safe, and professional**.
+---
 
-## Important Notes
-- No Wi-Fi required
-- No personal data is collected
-- Students cannot bypass DNS
-- Works immediately when plugged in
+### After Server Reboot
+```bash
+cd ~/exam-firewall/exam-firewall
+git pull
+sudo systemctl restart exam-dashboard
+```
 
+---
 
+## Blocked Domains (Current List)
+Located in `dns/blocked_domains.conf`:
+
+| Category | Sites |
+|----------|-------|
+| AI Tools | chatgpt.com, openai.com, claude.ai, gemini.google.com, bard.google.com |
+| Games | chess.com |
+| Streaming | netflix.com |
+
+To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the server.
+
+---
+
+## Dashboard Features
+- 🔐 Admin login with password protection and lockout after 5 failed attempts
+- 📋 View all connected student devices (IP, MAC, Hostname, Status)
+- 🚫 Block / Unblock individual devices
+- 🔴 Enable / Disable Exam Mode
+- 🔄 Auto-refreshes every 10 seconds
+
+---
+
+## How Device Blocking Works
+- Uses `iptables` to drop all traffic from a student's IP
+- Works through a custom chain called `EXAM_BLOCK`
+- Block/unblock is instant from the dashboard
+
+---
+
+## How DNS Blocking Works
+1. Dashboard copies `dns/blocked_domains.conf` → `/etc/dnsmasq.d/exam-block.conf`
+2. dnsmasq resolves blocked domains to `0.0.0.0` (unreachable)
+3. All student DNS requests are forced through the firewall
+4. Students cannot bypass by using Google DNS or Cloudflare DNS
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| Dashboard asks for Linux password | Add sudoers entries (Step 11) |
+| Websites not blocked | Check `/etc/dnsmasq.conf` has `conf-dir=/etc/dnsmasq.d/,*.conf` uncommented |
+| Hostnames show as Unknown | Check `isc-dhcp-server` is running: `sudo systemctl status isc-dhcp-server` |
+| Dashboard not starting | Check service: `sudo systemctl status exam-dashboard` |
+| Port 5000 already in use | Stop old instance: `sudo systemctl stop exam-dashboard` |
+
+---
 
 ## Project Status
-Under testing.
-Will be ready for classroom use.
+✅ Firewall routing and NAT working  
+✅ DHCP assigning IPs to students  
+✅ DNS filtering working  
+✅ DNS hijacking (students cannot bypass)  
+✅ Flask dashboard with login  
+✅ Device detection with hostname  
+✅ Device blocking/unblocking  
+✅ Exam mode toggle  
+✅ Auto-start on reboot  
+✅ GitHub-managed block list  
 
 ---
 
+## Future Improvements
+- Block DNS over HTTPS (DoH) bypass
+- Block VPN ports
+- Show device manufacturer from MAC address
+- Real-time traffic statistics
+- Dashboard alerts for blocked access attempts
 
+---
 
-
+## License
+For educational and school use only.

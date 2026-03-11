@@ -84,20 +84,16 @@
 
                 <td>
                     {% if d.blocked %}
-                        <span style="color:red;font-weight:bold;">Blocked</span>
-                    {% else %}
-                        <span style="color:green;font-weight:bold;">Allowed</span>
-                    {% endif %}
-                </td>
-
-                <td>
-                    {% if d.blocked %}
                         <form action="{{ url_for('unblock_device', ip=d.ip) }}" method="get">
-                            <button type="submit">Unblock</button>
+                            <button type="submit" style="background-color:#27ae60;">
+                                ✅ Unblock
+                            </button>
                         </form>
                     {% else %}
                         <form action="{{ url_for('block_device', ip=d.ip) }}" method="get">
-                            <button type="submit">Block</button>
+                            <button type="submit" style="background-color:#e74c3c;">
+                                🚫 Block
+                            </button>
                         </form>
                     {% endif %}
                 </td>

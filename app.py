@@ -150,16 +150,22 @@ def unblock_device(ip):
     return redirect(url_for("index"))
 
 # =========================
-# RUN (LOCALHOST ONLY)
+# Device kill/restore
 # =========================
 @app.route("/network/kill")
 @login_required
-def network_kill():
+def kill_network():
     firewall.kill_network()
     return redirect(url_for("index"))
 
 @app.route("/network/restore")
 @login_required
-def network_restore():
+def restore_network():
     firewall.restore_network()
     return redirect(url_for("index"))
+
+# =========================
+# RUN (LOCALHOST ONLY)
+# =========================
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)

@@ -50,17 +50,17 @@
         {% endif %}
     </p>
     {% if network_status == "killed" %}
-        <form action="{{ url_for('restore_network') }}" method="get" style="display:inline;">
-            <button type="submit" style="background-color:#27ae60;">
-                ✅ Restore All Internet
-            </button>
-        </form>
-    {% else %}
-        <form action="{{ url_for('kill_network') }}" method="get" style="display:inline;">
-            <button type="submit" style="background-color:#e74c3c;">
-                ⛔ Kill All Internet
-            </button>
-        </form>
+        <form action="{{ url_for('network_kill') }}" method="get">
+    <button type="submit" style="background-color:#e74c3c;">
+        ⛔ Kill All Internet
+    </button>
+</form>
+
+<form action="{{ url_for('network_restore') }}" method="get">
+    <button type="submit" style="background-color:#27ae60;">
+        ✅ Restore All Internet
+    </button>
+</form>
     {% endif %}
 </div>
 

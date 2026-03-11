@@ -152,16 +152,16 @@ def unblock_device(ip):
 # =========================
 # Device kill/restore
 # =========================
-# WRONG - same name as firewall.py function
+# CORRECT - different function names
 @app.route("/network/kill")
 @login_required
-def kill_network():
+def network_kill():
     firewall.kill_network()
     return redirect(url_for("index"))
 
 @app.route("/network/restore")
 @login_required
-def restore_network():
+def network_restore():
     firewall.restore_network()
     return redirect(url_for("index"))
 

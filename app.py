@@ -111,13 +111,14 @@ def logout():
 def index():
     exam_status = firewall.exam_status()
     devices = firewall.connected_devices()
+    network_status = firewall.network_status()
 
     return render_template(
         "index.html",
         exam_status=exam_status,
-        devices=devices
+        devices=devices,
+        network_status=network_status
     )
-
 # =========================
 # EXAM CONTROL
 # =========================

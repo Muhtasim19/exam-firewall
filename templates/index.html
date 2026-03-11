@@ -38,7 +38,31 @@
     </form>
 
 </div>
-
+    
+<div class="section-box">
+    <h2>Network Control</h2>
+    <p>
+        <strong>Network Status:</strong>
+        {% if network_status == "killed" %}
+            <span style="color:red;font-weight:bold;">⛔ ALL STUDENTS DISCONNECTED</span>
+        {% else %}
+            <span style="color:green;font-weight:bold;">✅ Network Active</span>
+        {% endif %}
+    </p>
+    {% if network_status == "killed" %}
+        <form action="{{ url_for('restore_network') }}" method="get" style="display:inline;">
+            <button type="submit" style="background-color:#27ae60;">
+                ✅ Restore All Internet
+            </button>
+        </form>
+    {% else %}
+        <form action="{{ url_for('kill_network') }}" method="get" style="display:inline;">
+            <button type="submit" style="background-color:#e74c3c;">
+                ⛔ Kill All Internet
+            </button>
+        </form>
+    {% endif %}
+</div>
 
 <div class="section-box">
 

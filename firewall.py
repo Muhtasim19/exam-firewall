@@ -206,6 +206,8 @@ def connected_devices():
                 })
 
     return devices
+
+
 # ==========================
 # Kill Switch
 # ==========================

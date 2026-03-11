@@ -15,32 +15,26 @@
 </div>
 
 <h1>Exam Firewall Dashboard</h1>
-
 <div class="section-box">
-
-    <h2>Exam Mode Control</h2>
+    <h2>Exam & Network Control</h2>
 
     <p>
-        <strong>Status:</strong>
+        <strong>Exam Mode:</strong>
         {% if exam_status == "active" %}
             <span style="color:green;font-weight:bold;">ACTIVE</span>
         {% else %}
             <span style="color:red;font-weight:bold;">INACTIVE</span>
         {% endif %}
     </p>
-
     <form action="{{ url_for('exam_on') }}" method="get" style="display:inline;">
         <button type="submit">Enable Exam Mode</button>
     </form>
-
     <form action="{{ url_for('exam_off') }}" method="get" style="display:inline;">
         <button type="submit">Disable Exam Mode</button>
     </form>
 
-</div>
-    
-<div class="section-box">
-    <h2>Network Control</h2>
+    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e6e9f0;">
+
     <p>
         <strong>Network Status:</strong>
         {% if network_status == "killed" %}
@@ -50,13 +44,13 @@
         {% endif %}
     </p>
     {% if network_status == "killed" %}
-        <form action="{{ url_for('restore_network') }}" method="get" style="display:inline;">
+        <form action="{{ url_for('network_restore') }}" method="get" style="display:inline;">
             <button type="submit" style="background-color:#27ae60;">
                 ✅ Restore All Internet
             </button>
         </form>
     {% else %}
-        <form action="{{ url_for('kill_network') }}" method="get" style="display:inline;">
+        <form action="{{ url_for('network_kill') }}" method="get" style="display:inline;">
             <button type="submit" style="background-color:#e74c3c;">
                 ⛔ Kill All Internet
             </button>

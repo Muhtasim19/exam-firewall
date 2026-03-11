@@ -206,3 +206,22 @@ def connected_devices():
                 })
 
     return devices
+# ==========================
+# Kill Switch
+# ==========================
+
+def kill_network():
+    ensure_chain()
+    # Block ALL student traffic
+    run_safe("iptables -I FORWARD -i eno1 -o enp2s0 -j DROP")
+
+def restore_network():
+    # Remove the kill switch rule
+    run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
+
+def network_status():
+    output = run("iptables -L FORWARD -n")
+    for line in output.splitlines():
+        if "DROP" in line and "eno1" in line and "enp2s0" in line:
+            return "killed"
+    return "active"

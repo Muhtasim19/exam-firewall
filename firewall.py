@@ -213,17 +213,26 @@ def connected_devices():
 # ==========================
 
 def kill_network():
-    ensure_chain()
-    # Block ALL student traffic
-    run_safe("iptables -I FORWARD -i eno1 -o enp2s0 -j DROP")
+    # Remove any existing kill rules first to avoid duplicates
+    while True:
+        result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            break
+        run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
+    # Now add exactly one rule
+    run_safe("iptables -I FORWARD 1 -i eno1 -o enp2s0 -j DROP")
 
 def restore_network():
-    # Remove the kill switch rule
-    run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
-    
+    # Remove ALL kill switch rules
+    while True:
+        result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            break
+        run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
+
 def network_status():
     output = run("iptables -L FORWARD -n -v")
     for line in output.splitlines():
-        if "DROP" in line and "eno1" in line:
+        if "DROP" in line and "eno1" in line and "enp2s0" in line:
             return "killed"
     return "active"

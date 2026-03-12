@@ -137,21 +137,12 @@ def get_dhcp_hostnames():
 # ==========================
 
 def block_device(ip):
-
     ensure_chain()
-
-    run_safe(
-        f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP "
-        f"|| iptables -I {EXAM_CHAIN} 1 -s {ip} -j DROP"
-    )
+    run_safe(f"iptables -I {EXAM_CHAIN} 1 -s {ip} -j DROP")
 
 
 def unblock_device(ip):
-
-    run_safe(
-        f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP "
-        f"&& iptables -D {EXAM_CHAIN} -s {ip} -j DROP"
-    )
+    run_safe(f"iptables -D {EXAM_CHAIN} -s {ip} -j DROP")
 
 
 def get_blocked_ips():

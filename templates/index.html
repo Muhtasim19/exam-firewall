@@ -15,6 +15,7 @@
 </div>
 
 <h1>Exam Firewall Dashboard</h1>
+
 <div class="section-box">
     <h2>Exam & Network Control</h2>
 
@@ -81,7 +82,13 @@
                 <td>{{ d.mac }}</td>
                 <td>{{ d.hostname }}</td>
                 <td>{{ d.state }}</td>
-
+                <td>
+                    {% if d.blocked %}
+                        <span style="color:red;font-weight:bold;">🚫 Blocked</span>
+                    {% else %}
+                        <span style="color:green;font-weight:bold;">✅ Allowed</span>
+                    {% endif %}
+                </td>
                 <td>
                     {% if d.blocked %}
                         <form action="{{ url_for('unblock_device', ip=d.ip) }}" method="get">

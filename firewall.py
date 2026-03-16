@@ -68,6 +68,20 @@ def exam_on():
 
     run_safe("systemctl restart dnsmasq")
 
+    # Kill all connections to force reconnect through DNS filter
+    run_safe("iptables -I FORWARD 1 -i eno1 -o enp2s0 -j DROP")
+    
+    # Small delay then restore — forces all existing connections to drop
+    import time
+    time.sleep(2)
+    
+    # Remove the kill rule — new connections will go through DNS filter
+    while True:
+        result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            break
+        run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
+
 
 def exam_off():
     # Remove IP blocks

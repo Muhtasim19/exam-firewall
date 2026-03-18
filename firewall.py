@@ -68,7 +68,7 @@ def exam_on():
 
     run_safe("systemctl restart dnsmasq")
 
-    # Force drop established connections by restarting conntrack
+    # Flush all existing connections so students reconnect through DNS filter
     run_safe("conntrack -F")
 
 

@@ -8,13 +8,14 @@ It works at the **network level**, so:
 - No software is installed on student devices
 - Works on Windows, macOS, and Linux
 - Students cannot bypass it by changing their DNS settings
+- Students cannot bypass it using IPv6
 - Controlled entirely from a **web dashboard**
 
 ---
 
 ## Why Use This System
 During exams, students may try to access:
-- AI tools (ChatGPT, OpenAI, Gemini, Claude, etc.)
+- AI tools (ChatGPT, OpenAI, Gemini, Claude, Perplexity, etc.)
 - Online games (chess.com, lichess)
 - Streaming sites (Netflix, YouTube)
 
@@ -27,11 +28,14 @@ This firewall enforces rules **before traffic reaches the internet**.
 - Acts as a gateway between students and the internet
 - Automatically assigns IP addresses to student devices (DHCP)
 - Forces all DNS requests through the firewall (DNS hijacking)
+- Blocks IPv6 DNS responses to prevent bypass
 - Blocks selected websites using dnsmasq DNS filtering
 - Detects connected devices with IP, MAC, and hostname
-- Allows individual device blocking/unblocking
+- Allows individual device blocking/unblocking (drops ALL traffic)
+- Kill switch to disconnect ALL students instantly
 - Web dashboard with login, exam mode toggle, and device control
 - Blocked domain list managed from GitHub
+- Served via Nginx + Gunicorn (production ready)
 
 ---
 
@@ -50,11 +54,16 @@ Internet
 │
 Router / Modem  (10.10.32.1)
 │
-Linux Firewall Server  (WAN: 10.10.32.71 / LAN: 192.168.50.1)
+Linux Firewall Server  (WAN: 10.10.32.70 / LAN: 192.168.50.1)
 │
 Ethernet Switch
 │
 Student Devices  (192.168.50.100 – 192.168.50.254)
+```
+
+Teacher accesses dashboard via:
+```
+http://10.10.32.70
 ```
 
 ---
@@ -62,11 +71,15 @@ Student Devices  (192.168.50.100 – 192.168.50.254)
 ## Software Used
 - Ubuntu Server 22.04 LTS
 - `iptables` — firewall, routing, device blocking
+- `ip6tables` — IPv6 blocking
 - `isc-dhcp-server` — assigns IPs to student devices
 - `dnsmasq` — DNS filtering (blocks websites)
 - `netfilter-persistent` — saves firewall rules across reboots
 - `Flask` — web dashboard backend
+- `Gunicorn` — production WSGI server
+- `Nginx` — reverse proxy (serves dashboard on port 80)
 - `Python 3` — firewall logic
+- `conntrack` — flushes existing connections on exam start
 
 ---
 
@@ -160,12 +173,20 @@ subnet 192.168.50.0 netmask 255.255.255.0 {
 sudo apt install dnsmasq -y
 ```
 
-Edit `/etc/dnsmasq.conf` and enable:
+Edit `/etc/dnsmasq.conf`:
 ```
+bind-interfaces
+interface=eno1
+server=8.8.8.8
+server=8.8.4.4
+no-resolv
 conf-dir=/etc/dnsmasq.d/,*.conf
+filter-AAAA
 ```
 
-> ⚠️ Make sure this line is **uncommented** (no `#` at the start).
+> ⚠️ `filter-AAAA` blocks IPv6 DNS responses so students cannot bypass DNS blocking using IPv6.
+
+> ⚠️ Make sure `conf-dir=/etc/dnsmasq.d/,*.conf` is **uncommented** (no `#` at the start).
 
 ---
 
@@ -181,6 +202,11 @@ sudo iptables -A FORWARD -i eno1 -d 8.8.8.8 -j DROP
 sudo iptables -A FORWARD -i eno1 -d 1.1.1.1 -j DROP
 sudo iptables -A FORWARD -i eno1 -d 8.8.4.4 -j DROP
 sudo iptables -A FORWARD -i eno1 -d 9.9.9.9 -j DROP
+```
+
+Block IPv6 forwarding:
+```bash
+sudo ip6tables -A FORWARD -i eno1 -j DROP
 ```
 
 ---
@@ -207,11 +233,19 @@ cd exam-firewall/exam-firewall
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+pip install gunicorn
 ```
 
 ---
 
-### Step 11: Configure sudoers (Required for Dashboard)
+### Step 11: Install conntrack
+```bash
+sudo apt install conntrack -y
+```
+
+---
+
+### Step 12: Configure sudoers (Required for Dashboard)
 The dashboard needs to run iptables and systemctl without password prompts.
 
 ```bash
@@ -228,7 +262,44 @@ admin_luniux ALL=(ALL) NOPASSWD: /bin/rm
 
 ---
 
-### Step 12: Set Up Systemd Service (Auto-start)
+### Step 13: Set Up Nginx
+```bash
+sudo apt install nginx -y
+sudo nano /etc/nginx/sites-available/exam-dashboard
+```
+
+Paste:
+```nginx
+server {
+    listen 80;
+    server_name 10.10.32.70;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+Enable the site:
+```bash
+sudo ln -s /etc/nginx/sites-available/exam-dashboard /etc/nginx/sites-enabled/
+sudo rm /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl restart nginx
+sudo systemctl enable nginx
+```
+
+Open port 80:
+```bash
+sudo iptables -I INPUT -i enp2s0 -p tcp --dport 80 -j ACCEPT
+sudo netfilter-persistent save
+```
+
+---
+
+### Step 14: Set Up Systemd Service (Auto-start)
 ```bash
 sudo nano /etc/systemd/system/exam-dashboard.service
 ```
@@ -242,7 +313,7 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=/home/admin_luniux/exam-firewall/exam-firewall
-ExecStart=/home/admin_luniux/exam-firewall/exam-firewall/venv/bin/python3 app.py
+ExecStart=/home/admin_luniux/exam-firewall/exam-firewall/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:5000 app:app
 Restart=always
 RestartSec=3
 
@@ -262,9 +333,9 @@ sudo systemctl start exam-dashboard
 ## Daily Use (After Setup)
 
 ### Access the Dashboard
-Open a browser and go to:
+Teacher opens a browser and goes to:
 ```
-http://192.168.50.1:5000
+http://10.10.32.70
 ```
 
 Login with your admin password.
@@ -276,7 +347,7 @@ Edit `dns/blocked_domains.conf` on GitHub, then on the server:
 ```bash
 cd ~/exam-firewall/exam-firewall
 git pull
-sudo systemctl restart exam-dashboard
+sudo systemctl restart dnsmasq
 ```
 
 Then toggle Exam Mode off and on from the dashboard to reload the new list.
@@ -297,9 +368,13 @@ Located in `dns/blocked_domains.conf`:
 
 | Category | Sites |
 |----------|-------|
-| AI Tools | chatgpt.com, openai.com, claude.ai, gemini.google.com, bard.google.com |
+| AI Tools | chatgpt.com, openai.com, claude.ai, gemini.google.com, perplexity.ai, grok.com, deepseek.com |
+| AI Image | midjourney.com, leonardo.ai, dreamstudio.ai |
+| AI Video | runwayml.com, pika.art, synthesia.io |
+| AI Audio | elevenlabs.io, suno.ai |
+| AI Coding | copilot.github.com, githubcopilot.com |
 | Games | chess.com |
-| Streaming | netflix.com |
+| Streaming | netflix.com, youtube.com |
 
 To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the server.
 
@@ -308,16 +383,19 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 ## Dashboard Features
 - 🔐 Admin login with password protection and lockout after 5 failed attempts
 - 📋 View all connected student devices (IP, MAC, Hostname, Status)
-- 🚫 Block / Unblock individual devices
+- 🚫 Block / Unblock individual devices (cuts ALL internet for that device)
+- ⛔ Kill All Internet — disconnects every student instantly
+- ✅ Restore All Internet — brings everyone back online
 - 🔴 Enable / Disable Exam Mode
 - 🔄 Auto-refreshes every 10 seconds
 
 ---
 
 ## How Device Blocking Works
-- Uses `iptables` to drop all traffic from a student's IP
+- Uses `iptables` to drop ALL traffic from a student's IP
 - Works through a custom chain called `EXAM_BLOCK`
 - Block/unblock is instant from the dashboard
+- Does not require exam mode to be active
 
 ---
 
@@ -325,7 +403,9 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 1. Dashboard copies `dns/blocked_domains.conf` → `/etc/dnsmasq.d/exam-block.conf`
 2. dnsmasq resolves blocked domains to `0.0.0.0` (unreachable)
 3. All student DNS requests are forced through the firewall
-4. Students cannot bypass by using Google DNS or Cloudflare DNS
+4. `filter-AAAA` blocks IPv6 DNS responses — students cannot bypass using IPv6
+5. Students cannot bypass by using Google DNS or Cloudflare DNS
+6. `conntrack -F` flushes all existing connections when exam mode starts
 
 ---
 
@@ -333,11 +413,13 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 
 | Problem | Fix |
 |---------|-----|
-| Dashboard asks for Linux password | Add sudoers entries (Step 11) |
+| Dashboard asks for Linux password | Add sudoers entries (Step 12) |
 | Websites not blocked | Check `/etc/dnsmasq.conf` has `conf-dir=/etc/dnsmasq.d/,*.conf` uncommented |
+| Sites blocked but IPv6 still works | Check `filter-AAAA` is in `/etc/dnsmasq.conf` |
 | Hostnames show as Unknown | Check `isc-dhcp-server` is running: `sudo systemctl status isc-dhcp-server` |
 | Dashboard not starting | Check service: `sudo systemctl status exam-dashboard` |
-| Port 5000 already in use | Stop old instance: `sudo systemctl stop exam-dashboard` |
+| Teacher cannot access dashboard | Check Nginx: `sudo systemctl status nginx` |
+| Kill switch won't restore | Run `sudo iptables -D FORWARD -i eno1 -o enp2s0 -j DROP` until it says bad rule |
 
 ---
 
@@ -346,21 +428,17 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 ✅ DHCP assigning IPs to students  
 ✅ DNS filtering working  
 ✅ DNS hijacking (students cannot bypass)  
+✅ IPv6 bypass blocked  
 ✅ Flask dashboard with login  
+✅ Nginx + Gunicorn production setup  
+✅ Teacher access via `http://10.10.32.70`  
 ✅ Device detection with hostname  
-✅ Device blocking/unblocking  
-✅ Exam mode toggle  
+✅ Individual device blocking/unblocking  
+✅ Kill switch / Restore all internet  
+✅ Exam mode flushes existing connections  
 ✅ Auto-start on reboot  
 ✅ GitHub-managed block list  
 
----
-
-## Future Improvements
-- Block DNS over HTTPS (DoH) bypass
-- Block VPN ports
-- Show device manufacturer from MAC address
-- Real-time traffic statistics
-- Dashboard alerts for blocked access attempts
 
 ---
 

@@ -68,9 +68,8 @@ def exam_on():
 
     run_safe("systemctl restart dnsmasq")
 
-    # Force drop all connections for 2 seconds then restore
-    run_safe("iptables -I FORWARD 1 -i eno1 -o enp2s0 -j DROP")
-    run_safe("sleep 2 && iptables -D FORWARD -i eno1 -o enp2s0 -j DROP &")
+    # Force drop established connections by restarting conntrack
+    run_safe("conntrack -F")
 
 
 def exam_off():

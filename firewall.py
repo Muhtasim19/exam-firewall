@@ -68,8 +68,14 @@ def exam_on():
 
     run_safe("systemctl restart dnsmasq")
 
-    # Flush all existing connections so students reconnect through DNS filter
+    # Flush existing connections
     run_safe("conntrack -F")
+
+    # Block ChatGPT/OpenAI IP ranges directly
+    run_safe("iptables -I FORWARD -i eno1 -d 104.18.32.0/24 -j DROP")
+    run_safe("iptables -I FORWARD -i eno1 -d 104.18.33.0/24 -j DROP")
+    run_safe("iptables -I FORWARD -i eno1 -d 172.64.154.0/24 -j DROP")
+    run_safe("iptables -I FORWARD -i eno1 -d 172.64.155.0/24 -j DROP")
 
 
 def exam_off():
@@ -82,6 +88,11 @@ def exam_off():
 
     run_safe("systemctl restart dnsmasq")
 
+    # Remove ChatGPT/OpenAI IP blocks
+    run_safe("iptables -D FORWARD -i eno1 -d 104.18.32.0/24 -j DROP")
+    run_safe("iptables -D FORWARD -i eno1 -d 104.18.33.0/24 -j DROP")
+    run_safe("iptables -D FORWARD -i eno1 -d 172.64.154.0/24 -j DROP")
+    run_safe("iptables -D FORWARD -i eno1 -d 172.64.155.0/24 -j DROP")
 
 def exam_status():
 

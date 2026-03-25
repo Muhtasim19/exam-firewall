@@ -418,7 +418,7 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 | Sites blocked but IPv6 still works | Check `filter-AAAA` is in `/etc/dnsmasq.conf` |
 | Hostnames show as Unknown | Check `isc-dhcp-server` is running: `sudo systemctl status isc-dhcp-server` |
 | Dashboard not starting | Check service: `sudo systemctl status exam-dashboard` |
-| Teacher cannot access dashboard | Check Nginx: `sudo systemctl status nginx` |
+| Tester cannot access dashboard | Check Nginx: `sudo systemctl status nginx` |
 | Kill switch won't restore | Run `sudo iptables -D FORWARD -i eno1 -o enp2s0 -j DROP` until it says bad rule |
 
 ---

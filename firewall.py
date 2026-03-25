@@ -71,11 +71,14 @@ def exam_on():
     # Flush only TCP connections (leaves DHCP/UDP alone)
     run_safe("conntrack -F -p tcp")
 
-    # Block ChatGPT/OpenAI IP ranges directly
+    # Block ChatGPT/OpenAI IP ranges
     run_safe("iptables -I FORWARD -i eno1 -d 104.18.32.0/24 -j DROP")
     run_safe("iptables -I FORWARD -i eno1 -d 104.18.33.0/24 -j DROP")
     run_safe("iptables -I FORWARD -i eno1 -d 172.64.154.0/24 -j DROP")
     run_safe("iptables -I FORWARD -i eno1 -d 172.64.155.0/24 -j DROP")
+
+    # Block Gemini IP range
+    run_safe("iptables -I FORWARD -i eno1 -d 172.253.122.0/24 -j DROP")
 
 
 def exam_off():

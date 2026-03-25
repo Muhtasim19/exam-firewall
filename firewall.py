@@ -77,6 +77,9 @@ def exam_on():
     run_safe("iptables -I FORWARD -i eno1 -d 172.64.154.0/24 -j DROP")
     run_safe("iptables -I FORWARD -i eno1 -d 172.64.155.0/24 -j DROP")
 
+    # Block Gemini IP range only
+    run_safe("iptables -I FORWARD -i eno1 -d 172.253.122.0/24 -j DROP")
+
 
 def exam_off():
     # Remove IP blocks
@@ -93,6 +96,9 @@ def exam_off():
     run_safe("iptables -D FORWARD -i eno1 -d 104.18.33.0/24 -j DROP")
     run_safe("iptables -D FORWARD -i eno1 -d 172.64.154.0/24 -j DROP")
     run_safe("iptables -D FORWARD -i eno1 -d 172.64.155.0/24 -j DROP")
+
+    # Remove Gemini IP block
+    run_safe("iptables -D FORWARD -i eno1 -d 172.253.122.0/24 -j DROP")
 
 def exam_status():
 

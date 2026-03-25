@@ -68,19 +68,21 @@ def exam_on():
 
     run_safe("systemctl restart dnsmasq")
 
-    # Flush only TCP connections (leaves DHCP/UDP alone)
+    # Flush only TCP connections
     run_safe("conntrack -F -p tcp")
 
-    # Block ChatGPT/OpenAI IP ranges
-    run_safe("iptables -I FORWARD -i eno1 -d 104.18.32.0/24 -j DROP")
-    run_safe("iptables -I FORWARD -i eno1 -d 104.18.33.0/24 -j DROP")
-    run_safe("iptables -I FORWARD -i eno1 -d 172.64.154.0/24 -j DROP")
-    run_safe("iptables -I FORWARD -i eno1 -d 172.64.155.0/24 -j DROP")
-
-    # Block Gemini IP range only
-    run_safe("iptables -I FORWARD -i eno1 -d 172.253.122.0/24 -j DROP")
-
-
+    # Block IP ranges - check first to avoid duplicates
+    ip_blocks = [
+        "104.18.32.0/24",
+        "104.18.33.0/24",
+        "172.64.154.0/24",
+        "172.64.155.0/24",
+        "172.253.122.0/24",
+    ]
+    for ip in ip_blocks:
+        result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            run_safe(f"iptables -I FORWARD 1 -i eno1 -d {ip} -j DROP")
 def exam_off():
     # Remove IP blocks
     run_safe(f"iptables -F {EXAM_CHAIN}")
@@ -88,17 +90,22 @@ def exam_off():
 
     # Remove DNS block file
     run_safe(f"rm -f {DNS_BLOCK_FILE}")
-
     run_safe("systemctl restart dnsmasq")
 
-    # Remove ChatGPT/OpenAI IP blocks
-    run_safe("iptables -D FORWARD -i eno1 -d 104.18.32.0/24 -j DROP")
-    run_safe("iptables -D FORWARD -i eno1 -d 104.18.33.0/24 -j DROP")
-    run_safe("iptables -D FORWARD -i eno1 -d 172.64.154.0/24 -j DROP")
-    run_safe("iptables -D FORWARD -i eno1 -d 172.64.155.0/24 -j DROP")
-
-    # Remove Gemini IP block
-    run_safe("iptables -D FORWARD -i eno1 -d 172.253.122.0/24 -j DROP")
+    # Remove IP blocks
+    ip_blocks = [
+        "104.18.32.0/24",
+        "104.18.33.0/24",
+        "172.64.154.0/24",
+        "172.64.155.0/24",
+        "172.253.122.0/24",
+    ]
+    for ip in ip_blocks:
+        while True:
+            result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j DROP 2>/dev/null && echo found")
+            if "found" not in result:
+                break
+            run_safe(f"iptables -D FORWARD -i eno1 -d {ip} -j DROP")
 
 def exam_status():
 

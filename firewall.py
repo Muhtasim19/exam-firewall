@@ -68,8 +68,8 @@ def exam_on():
 
     run_safe("systemctl restart dnsmasq")
 
-    # Wait for dnsmasq to fully restart then flush connections
-    run_safe("sleep 1 && conntrack -F &")
+    # Flush only TCP connections (leaves DHCP/UDP alone)
+    run_safe("conntrack -F -p tcp")
 
     # Block ChatGPT/OpenAI IP ranges directly
     run_safe("iptables -I FORWARD -i eno1 -d 104.18.32.0/24 -j DROP")

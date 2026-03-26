@@ -198,6 +198,7 @@ def connected_devices():
     ensure_chain()
 
     devices = []
+    seen_ips = set()
     blocked_ips = get_blocked_ips()
     hostnames = get_dhcp_hostnames()
 
@@ -213,7 +214,9 @@ def connected_devices():
             mac = parts[4].lower()
             state = parts[-1]
 
-            if ip.startswith(LAN_PREFIX):
+            if ip.startswith(LAN_PREFIX) and ip not in seen_ips:
+
+                seen_ips.add(ip)
 
                 devices.append({
                     "ip": ip,

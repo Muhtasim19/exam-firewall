@@ -4,11 +4,16 @@ import os
 LAN_PREFIX = "192.168.50."
 EXAM_CHAIN = "EXAM_BLOCK"
 
-# DNS blocking
-# WRONG - dnsmasq won't find this
 DNS_BLOCK_FILE = "/etc/dnsmasq.d/exam-block.conf"
 DNS_SOURCE_FILE = "dns/blocked_domains.conf"
 
+IP_BLOCKS = [
+    "104.18.32.0/24",
+    "104.18.33.0/24",
+    "172.64.154.0/24",
+    "172.64.155.0/24",
+    "172.253.112.0/21",  # All Gemini subnets
+]
 
 # ==========================
 # Utility
@@ -31,29 +36,20 @@ def run_safe(cmd):
 # ==========================
 
 def ensure_chain():
+    # Create EXAM_BLOCK chain if missing
     chains = run("iptables -L")
-
     if EXAM_CHAIN not in chains:
         run_safe(f"iptables -N {EXAM_CHAIN}")
 
-    # Allow established connections
-    run_safe(
-        "iptables -C FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT "
-        "|| iptables -I FORWARD 1 -m state --state RELATED,ESTABLISHED -j ACCEPT"
-    )
-
-    # Attach exam chain
-    forward_rules = run("iptables -L FORWARD")
-
-    if EXAM_CHAIN not in forward_rules:
-        run_safe(f"iptables -I FORWARD 2 -j {EXAM_CHAIN}")
-
-    # Ensure RETURN rule exists
+    # Ensure RETURN rule exists at end of chain
     chain_rules = run(f"iptables -L {EXAM_CHAIN}")
-
     if "RETURN" not in chain_rules:
         run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
 
+    # Attach EXAM_BLOCK as FIRST rule in FORWARD
+    forward_rules = run("iptables -L FORWARD")
+    if EXAM_CHAIN not in forward_rules:
+        run_safe(f"iptables -I FORWARD 1 -j {EXAM_CHAIN}")
 
 # ==========================
 # Exam Mode
@@ -68,23 +64,18 @@ def exam_on():
 
     run_safe("systemctl restart dnsmasq")
 
-    # Flush only TCP connections
+    # Flush only TCP connections (leaves DHCP/UDP alone)
     run_safe("conntrack -F -p tcp")
 
     # Block IP ranges - check first to avoid duplicates
-    ip_blocks = [
-        "104.18.32.0/24",
-        "104.18.33.0/24",
-        "172.64.154.0/24",
-        "172.64.155.0/24",
-        "172.253.122.0/24",
-    ]
-    for ip in ip_blocks:
+    for ip in IP_BLOCKS:
         result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j DROP 2>/dev/null && echo found")
         if "found" not in result:
             run_safe(f"iptables -I FORWARD 1 -i eno1 -d {ip} -j DROP")
+
+
 def exam_off():
-    # Remove IP blocks
+    # Flush EXAM_BLOCK chain (removes individual device blocks too)
     run_safe(f"iptables -F {EXAM_CHAIN}")
     run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
 
@@ -93,33 +84,18 @@ def exam_off():
     run_safe("systemctl restart dnsmasq")
 
     # Remove IP blocks
-    ip_blocks = [
-        "104.18.32.0/24",
-        "104.18.33.0/24",
-        "172.64.154.0/24",
-        "172.64.155.0/24",
-        "172.253.122.0/24",
-    ]
-    for ip in ip_blocks:
+    for ip in IP_BLOCKS:
         while True:
             result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j DROP 2>/dev/null && echo found")
             if "found" not in result:
                 break
             run_safe(f"iptables -D FORWARD -i eno1 -d {ip} -j DROP")
 
+
 def exam_status():
-
-    # Check iptables
-    output = run(f"iptables -L {EXAM_CHAIN} -n")
-
-    for line in output.splitlines():
-        if "DROP" in line:
-            return "active"
-
     # Check DNS block file
     if os.path.exists(DNS_BLOCK_FILE):
         return "active"
-
     return "inactive"
 
 
@@ -149,7 +125,6 @@ def get_dhcp_hostnames():
                 if "client-hostname" in line:
                     hostname = line.split()[-1].replace(";", "").replace('"', "")
 
-            # Only update if hostname exists (keeps most recent)
             if ip and hostname:
                 hostnames[ip] = hostname
 
@@ -165,23 +140,26 @@ def get_dhcp_hostnames():
 
 def block_device(ip):
     ensure_chain()
-    run_safe(f"iptables -I {EXAM_CHAIN} 1 -s {ip} -j DROP")
+    # Add to EXAM_BLOCK chain
+    result = run(f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP 2>/dev/null && echo found")
+    if "found" not in result:
+        run_safe(f"iptables -I {EXAM_CHAIN} 1 -s {ip} -j DROP")
 
 
 def unblock_device(ip):
-    run_safe(f"iptables -D {EXAM_CHAIN} -s {ip} -j DROP")
+    while True:
+        result = run(f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            break
+        run_safe(f"iptables -D {EXAM_CHAIN} -s {ip} -j DROP")
 
 
 def get_blocked_ips():
-
     blocked = set()
-
     output = run(f"iptables -L {EXAM_CHAIN} -n")
 
     for line in output.splitlines():
-
         parts = line.split()
-
         for part in parts:
             if part.startswith(LAN_PREFIX):
                 blocked.add(part)
@@ -194,24 +172,18 @@ def get_blocked_ips():
 # ==========================
 
 def connected_devices():
-
     ensure_chain()
 
     devices = {}
     blocked_ips = get_blocked_ips()
     hostnames = get_dhcp_hostnames()
 
-    # Refresh ARP table
-    run_safe("ip neigh flush nud stale")
-
     output = subprocess.check_output("ip neigh", shell=True, text=True)
 
     for line in output.splitlines():
-
         parts = line.split()
 
         if "lladdr" in parts:
-
             ip = parts[0]
             mac = parts[4].lower()
             state = parts[-1]
@@ -228,27 +200,27 @@ def connected_devices():
 
     return list(devices.values())
 
+
 # ==========================
 # Kill Switch
 # ==========================
 
 def kill_network():
-    # Remove any existing kill rules first to avoid duplicates
     while True:
         result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
         if "found" not in result:
             break
         run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
-    # Now add exactly one rule
     run_safe("iptables -I FORWARD 1 -i eno1 -o enp2s0 -j DROP")
 
+
 def restore_network():
-    # Remove ALL kill switch rules
     while True:
         result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
         if "found" not in result:
             break
         run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
+
 
 def network_status():
     output = run("iptables -L FORWARD -n -v")

@@ -197,10 +197,12 @@ def connected_devices():
 
     ensure_chain()
 
-    devices = []
-    seen_ips = set()
+    devices = {}
     blocked_ips = get_blocked_ips()
     hostnames = get_dhcp_hostnames()
+
+    # Refresh ARP table
+    run_safe("ip neigh flush nud stale")
 
     output = subprocess.check_output("ip neigh", shell=True, text=True)
 
@@ -214,20 +216,17 @@ def connected_devices():
             mac = parts[4].lower()
             state = parts[-1]
 
-            if ip.startswith(LAN_PREFIX) and ip not in seen_ips:
+            if ip.startswith(LAN_PREFIX):
+                if ip not in devices or state == "REACHABLE":
+                    devices[ip] = {
+                        "ip": ip,
+                        "mac": mac,
+                        "hostname": hostnames.get(ip, "Unknown"),
+                        "state": state,
+                        "blocked": ip in blocked_ips
+                    }
 
-                seen_ips.add(ip)
-
-                devices.append({
-                    "ip": ip,
-                    "mac": mac,
-                    "hostname": hostnames.get(ip, "Unknown"),
-                    "state": state,
-                    "blocked": ip in blocked_ips
-                })
-
-    return devices
-
+    return list(devices.values())
 
 # ==========================
 # Kill Switch

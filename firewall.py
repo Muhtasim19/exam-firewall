@@ -26,7 +26,8 @@ AI_DOMAINS = [
 
 # Google services to whitelist in strict mode
 WHITELIST_IPS = [
-    "142.251.0.0/16",    # Google Classroom + Docs
+    "142.251.0.0/16",    # Google Classroom + Docs + Meet
+    "172.253.0.0/16",    # Google accounts + services
     "216.239.32.0/19",   # Google services
     "64.233.160.0/19",   # Google services
     "74.125.0.0/16",     # Google broadly

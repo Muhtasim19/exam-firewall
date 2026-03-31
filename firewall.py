@@ -24,6 +24,16 @@ AI_DOMAINS = [
     "bard.google.com",
 ]
 
+# Google services to whitelist in strict mode
+WHITELIST_IPS = [
+    "142.251.0.0/16",    # Google Classroom + Docs
+    "216.239.32.0/19",   # Google services
+    "64.233.160.0/19",   # Google services
+    "74.125.0.0/16",     # Google broadly
+    "172.217.0.0/16",    # Google broadly
+]
+
+
 # ==========================
 # Utility
 # ==========================
@@ -37,8 +47,10 @@ def run(cmd):
     )
     return result.stdout.strip()
 
+
 def run_safe(cmd):
     subprocess.run(f"sudo {cmd}", shell=True)
+
 
 # ==========================
 # Firewall Setup
@@ -57,6 +69,7 @@ def ensure_chain():
     if EXAM_CHAIN not in forward_rules:
         run_safe(f"iptables -I FORWARD 1 -j {EXAM_CHAIN}")
 
+
 # ==========================
 # Auto IP Detection
 # ==========================
@@ -74,13 +87,11 @@ def get_ai_ips():
         )
         for line in result.stdout.splitlines():
             line = line.strip()
-            # Skip empty lines and CNAME records
             if not line or line.endswith('.'):
                 continue
             parts = line.split('.')
             if len(parts) == 4:
                 try:
-                    # Validate it's actually an IP
                     [int(p) for p in parts]
                     subnet = f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
                     ip_ranges.add(subnet)
@@ -88,6 +99,7 @@ def get_ai_ips():
                     continue
 
     return list(ip_ranges)
+
 
 # ==========================
 # Exam Mode
@@ -121,7 +133,7 @@ def exam_off():
     run_safe(f"rm -f {DNS_BLOCK_FILE}")
     run_safe("systemctl restart dnsmasq")
 
-    # Remove ALL AI IP blocks from FORWARD dynamically
+    # Remove ALL AI IP blocks from FORWARD
     output = run("iptables -L FORWARD -n")
     for line in output.splitlines():
         if "DROP" not in line:
@@ -140,6 +152,53 @@ def exam_off():
 def exam_status():
     if os.path.exists(DNS_BLOCK_FILE):
         return "active"
+    return "inactive"
+
+
+# ==========================
+# Strict Mode
+# ==========================
+
+def strict_mode_on():
+    ensure_chain()
+
+    # First clean up any existing strict mode rules
+    strict_mode_off()
+
+    # Flush existing connections
+    run_safe("conntrack -F")
+
+    # Add whitelist ACCEPT rules one by one at position 2
+    # (position 1 is EXAM_BLOCK)
+    for i, ip in enumerate(WHITELIST_IPS):
+        run_safe(f"iptables -I FORWARD {i + 2} -i eno1 -d {ip} -j ACCEPT")
+
+    # Block ALL other student traffic after whitelist rules
+    run_safe(f"iptables -I FORWARD {len(WHITELIST_IPS) + 2} -i eno1 -o enp2s0 -j DROP")
+
+
+def strict_mode_off():
+    # Remove whitelist ACCEPT rules
+    for ip in WHITELIST_IPS:
+        while True:
+            result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
+            if "found" not in result:
+                break
+            run_safe(f"iptables -D FORWARD -i eno1 -d {ip} -j ACCEPT")
+
+    # Remove strict DROP rule
+    while True:
+        result = run(f"iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            break
+        run_safe(f"iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
+
+
+def strict_status():
+    output = run("iptables -L FORWARD -n -v")
+    for line in output.splitlines():
+        if "DROP" in line and "eno1" in line and "enp2s0" in line:
+            return "active"
     return "inactive"
 
 
@@ -268,54 +327,7 @@ def network_status():
         if "DROP" in line and "eno1" in line and "enp2s0" in line:
             return "killed"
     return "active"
-WHITELIST_IPS = [
-    "142.251.45.0/24",   # Google Classroom
-    "216.239.38.0/24",   # Google
-    "64.233.180.0/24",   # Google services
-    "74.125.0.0/16",     # Google broadly
-]
 
-def strict_mode_on():
-    ensure_chain()
-
-    # Whitelist Google Classroom and Docs first
-    for ip in WHITELIST_IPS:
-        result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
-        if "found" not in result:
-            run_safe(f"iptables -I FORWARD 1 -i eno1 -d {ip} -j ACCEPT")
-
-    # Block ALL other internet
-    result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
-    if "found" not in result:
-        run_safe("iptables -A FORWARD -i eno1 -o enp2s0 -j DROP")
-
-    # Flush existing connections
-    run_safe("conntrack -F")
-
-
-def strict_mode_off():
-    # Remove whitelist rules
-    for ip in WHITELIST_IPS:
-        while True:
-            result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
-            if "found" not in result:
-                break
-            run_safe(f"iptables -D FORWARD -i eno1 -d {ip} -j ACCEPT")
-
-    # Remove block all rule
-    while True:
-        result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
-        if "found" not in result:
-            break
-        run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
-
-
-def strict_status():
-    output = run("iptables -L FORWARD -n")
-    for line in output.splitlines():
-        if "DROP" in line and "enp2s0" in line:
-            return "active"
-    return "inactive"
 
 # ==========================
 # Run once at startup

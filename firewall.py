@@ -7,12 +7,21 @@ EXAM_CHAIN = "EXAM_BLOCK"
 DNS_BLOCK_FILE = "/etc/dnsmasq.d/exam-block.conf"
 DNS_SOURCE_FILE = "dns/blocked_domains.conf"
 
+# Static IP blocks as fallback
 IP_BLOCKS = [
     "104.18.32.0/24",
     "104.18.33.0/24",
     "172.64.154.0/24",
     "172.64.155.0/24",
     "172.253.112.0/21",
+]
+
+# Domains to auto-resolve IPs for
+AI_DOMAINS = [
+    "chatgpt.com",
+    "openai.com",
+    "gemini.google.com",
+    "bard.google.com",
 ]
 
 # ==========================
@@ -49,6 +58,38 @@ def ensure_chain():
         run_safe(f"iptables -I FORWARD 1 -j {EXAM_CHAIN}")
 
 # ==========================
+# Auto IP Detection
+# ==========================
+
+def get_ai_ips():
+    """Dynamically resolve current AI service IPs"""
+    ip_ranges = set()
+
+    for domain in AI_DOMAINS:
+        result = subprocess.run(
+            f"dig +short {domain}",
+            shell=True,
+            text=True,
+            capture_output=True
+        )
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            # Skip empty lines and CNAME records
+            if not line or line.endswith('.'):
+                continue
+            parts = line.split('.')
+            if len(parts) == 4:
+                try:
+                    # Validate it's actually an IP
+                    [int(p) for p in parts]
+                    subnet = f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+                    ip_ranges.add(subnet)
+                except ValueError:
+                    continue
+
+    return list(ip_ranges)
+
+# ==========================
 # Exam Mode
 # ==========================
 
@@ -63,8 +104,11 @@ def exam_on():
     # Flush all connections to drop existing AI sessions
     run_safe("conntrack -F")
 
-    # Block IP ranges
-    for ip in IP_BLOCKS:
+    # Combine static + dynamic IP blocks
+    dynamic_ips = get_ai_ips()
+    all_blocks = list(set(IP_BLOCKS + dynamic_ips))
+
+    for ip in all_blocks:
         result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j DROP 2>/dev/null && echo found")
         if "found" not in result:
             run_safe(f"iptables -I FORWARD 1 -i eno1 -d {ip} -j DROP")
@@ -77,12 +121,20 @@ def exam_off():
     run_safe(f"rm -f {DNS_BLOCK_FILE}")
     run_safe("systemctl restart dnsmasq")
 
-    for ip in IP_BLOCKS:
-        while True:
-            result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j DROP 2>/dev/null && echo found")
-            if "found" not in result:
-                break
-            run_safe(f"iptables -D FORWARD -i eno1 -d {ip} -j DROP")
+    # Remove ALL AI IP blocks from FORWARD dynamically
+    output = run("iptables -L FORWARD -n")
+    for line in output.splitlines():
+        if "DROP" not in line:
+            continue
+        parts = line.split()
+        for part in parts:
+            if "/" in part and not any([
+                part.startswith("1.1.1"),
+                part.startswith("8.8"),
+                part.startswith("9.9"),
+                part == "0.0.0.0/0"
+            ]):
+                run_safe(f"iptables -D FORWARD -i eno1 -d {part} -j DROP")
 
 
 def exam_status():

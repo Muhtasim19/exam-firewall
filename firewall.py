@@ -65,7 +65,7 @@ def exam_on():
     run_safe("systemctl restart dnsmasq")
 
     # Flush only TCP connections (leaves DHCP/UDP alone)
-    run_safe("conntrack -F -p tcp")
+   run_safe("conntrack -F")
 
     # Block IP ranges - check first to avoid duplicates
     for ip in IP_BLOCKS:

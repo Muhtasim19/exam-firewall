@@ -159,26 +159,23 @@ def exam_status():
 # Strict Mode
 # ==========================
 
+# Strict mode DROP rule uses a specific comment to identify it
+STRICT_DROP_COMMENT = "strict-mode"
+
 def strict_mode_on():
     ensure_chain()
-
-    # First clean up any existing strict mode rules
     strict_mode_off()
-
-    # Flush existing connections
     run_safe("conntrack -F")
 
-    # Add whitelist ACCEPT rules one by one at position 2
-    # (position 1 is EXAM_BLOCK)
+    # Add whitelist ACCEPT rules
     for i, ip in enumerate(WHITELIST_IPS):
         run_safe(f"iptables -I FORWARD {i + 2} -i eno1 -d {ip} -j ACCEPT")
 
-    # Block ALL other student traffic after whitelist rules
-    run_safe(f"iptables -I FORWARD {len(WHITELIST_IPS) + 2} -i eno1 -o enp2s0 -j DROP")
+    # Block ALL other traffic with a comment marker
+    run_safe(f"iptables -I FORWARD {len(WHITELIST_IPS) + 2} -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
 
 
 def strict_mode_off():
-    # Remove whitelist ACCEPT rules
     for ip in WHITELIST_IPS:
         while True:
             result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
@@ -186,20 +183,26 @@ def strict_mode_off():
                 break
             run_safe(f"iptables -D FORWARD -i eno1 -d {ip} -j ACCEPT")
 
-    # Remove strict DROP rule
+    # Remove only the strict mode DROP rule using comment
     while True:
-        result = run(f"iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
+        result = run(f"iptables -C FORWARD -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP 2>/dev/null && echo found")
         if "found" not in result:
             break
-        run_safe(f"iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
+        run_safe(f"iptables -D FORWARD -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
 
 
 def strict_status():
     output = run("iptables -L FORWARD -n -v")
+    return "active" if STRICT_DROP_COMMENT in output else "inactive"
+
+
+def network_status():
+    output = run("iptables -L FORWARD -n -v")
     for line in output.splitlines():
-        if "DROP" in line and "eno1" in line and "enp2s0" in line:
-            return "active"
-    return "inactive"
+        # Only match kill switch — no comment marker
+        if "DROP" in line and "eno1" in line and "enp2s0" in line and STRICT_DROP_COMMENT not in line:
+            return "killed"
+    return "active"
 
 
 # ==========================

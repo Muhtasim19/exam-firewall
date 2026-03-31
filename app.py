@@ -112,12 +112,14 @@ def index():
     exam_status = firewall.exam_status()
     devices = firewall.connected_devices()
     network_status = firewall.network_status()
+    strict_status = firewall.strict_status()
 
     return render_template(
         "index.html",
         exam_status=exam_status,
         devices=devices,
-        network_status=network_status
+        network_status=network_status,
+        strict_status=strict_status
     )
 # =========================
 # EXAM CONTROL
@@ -163,6 +165,18 @@ def network_kill():
 @login_required
 def network_restore():
     firewall.restore_network()
+    return redirect(url_for("index"))
+
+@app.route("/strict/on")
+@login_required
+def strict_on():
+    firewall.strict_mode_on()
+    return redirect(url_for("index"))
+
+@app.route("/strict/off")
+@login_required
+def strict_off():
+    firewall.strict_mode_off()
     return redirect(url_for("index"))
 
 # =========================

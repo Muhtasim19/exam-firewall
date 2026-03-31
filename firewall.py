@@ -268,7 +268,54 @@ def network_status():
         if "DROP" in line and "eno1" in line and "enp2s0" in line:
             return "killed"
     return "active"
+WHITELIST_IPS = [
+    "142.251.45.0/24",   # Google Classroom
+    "216.239.38.0/24",   # Google
+    "64.233.180.0/24",   # Google services
+    "74.125.0.0/16",     # Google broadly
+]
 
+def strict_mode_on():
+    ensure_chain()
+
+    # Whitelist Google Classroom and Docs first
+    for ip in WHITELIST_IPS:
+        result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
+        if "found" not in result:
+            run_safe(f"iptables -I FORWARD 1 -i eno1 -d {ip} -j ACCEPT")
+
+    # Block ALL other internet
+    result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
+    if "found" not in result:
+        run_safe("iptables -A FORWARD -i eno1 -o enp2s0 -j DROP")
+
+    # Flush existing connections
+    run_safe("conntrack -F")
+
+
+def strict_mode_off():
+    # Remove whitelist rules
+    for ip in WHITELIST_IPS:
+        while True:
+            result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
+            if "found" not in result:
+                break
+            run_safe(f"iptables -D FORWARD -i eno1 -d {ip} -j ACCEPT")
+
+    # Remove block all rule
+    while True:
+        result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            break
+        run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
+
+
+def strict_status():
+    output = run("iptables -L FORWARD -n")
+    for line in output.splitlines():
+        if "DROP" in line and "enp2s0" in line:
+            return "active"
+    return "inactive"
 
 # ==========================
 # Run once at startup

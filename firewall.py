@@ -183,6 +183,7 @@ def strict_mode_on():
 
 
 def strict_mode_off():
+    # Remove whitelist ACCEPT rules
     for ip in WHITELIST_IPS:
         while True:
             result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
@@ -190,12 +191,19 @@ def strict_mode_off():
                 break
             run_safe(f"iptables -D FORWARD -i eno1 -d {ip} -j ACCEPT")
 
-    # Remove only the strict mode DROP rule using comment
+    # Remove strict DROP rule
     while True:
         result = run(f"iptables -C FORWARD -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP 2>/dev/null && echo found")
         if "found" not in result:
             break
         run_safe(f"iptables -D FORWARD -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
+
+    # Remove DNS blocking
+    run_safe(f"rm -f {DNS_BLOCK_FILE}")
+    run_safe("systemctl restart dnsmasq")
+
+    # Flush connections so no cached sessions survive
+    run_safe("conntrack -F")
 
 
 def strict_status():

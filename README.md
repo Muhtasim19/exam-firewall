@@ -30,12 +30,15 @@ This firewall enforces rules **before traffic reaches the internet**.
 - Forces all DNS requests through the firewall (DNS hijacking)
 - Blocks IPv6 DNS responses to prevent bypass
 - Blocks selected websites using dnsmasq DNS filtering
+- Auto-resolves AI service IPs dynamically on exam start
 - Detects connected devices with IP, MAC, and hostname
 - Allows individual device blocking/unblocking (drops ALL traffic)
 - Kill switch to disconnect ALL students instantly
+- Strict Mode — allows only Google Classroom and Docs
 - Web dashboard with login, exam mode toggle, and device control
 - Blocked domain list managed from GitHub
 - Served via Nginx + Gunicorn (production ready)
+- Server never sleeps (suspend/hibernate disabled)
 
 ---
 
@@ -61,9 +64,14 @@ Ethernet Switch
 Student Devices  (192.168.50.100 – 192.168.50.254)
 ```
 
-Teacher accesses dashboard via:
+Teacher/Admin accesses dashboard via:
 ```
-http://10.10.32.70
+http://10.10.32.
+```
+
+SSH access:
+```
+ssh admin_luniux@10.10.32.
 ```
 
 ---
@@ -78,8 +86,8 @@ http://10.10.32.70
 - `Flask` — web dashboard backend
 - `Gunicorn` — production WSGI server
 - `Nginx` — reverse proxy (serves dashboard on port 80)
+- `nmap` — network scanning for device refresh
 - `Python 3` — firewall logic
-- `conntrack` — flushes existing connections on exam start
 
 ---
 
@@ -136,6 +144,7 @@ To make it permanent:
 sudo nano /etc/sysctl.conf
 # Uncomment or add:
 net.ipv4.ip_forward=1
+net.ipv4.neigh.default.gc_stale_time=300
 ```
 
 ---
@@ -186,7 +195,18 @@ filter-AAAA
 
 > ⚠️ `filter-AAAA` blocks IPv6 DNS responses so students cannot bypass DNS blocking using IPv6.
 
-> ⚠️ Make sure `conf-dir=/etc/dnsmasq.d/,*.conf` is **uncommented** (no `#` at the start).
+Create dnsmasq override to wait for network:
+```bash
+sudo mkdir -p /etc/systemd/system/dnsmasq.service.d/
+sudo nano /etc/systemd/system/dnsmasq.service.d/override.conf
+```
+
+Paste:
+```ini
+[Unit]
+After=network-online.target
+Wants=network-online.target
+```
 
 ---
 
@@ -211,7 +231,17 @@ sudo ip6tables -A FORWARD -i eno1 -j DROP
 
 ---
 
-### Step 8: Save Firewall Rules
+### Step 8: Disable Server Sleep
+```bash
+sudo systemctl mask sleep.target
+sudo systemctl mask suspend.target
+sudo systemctl mask hibernate.target
+sudo systemctl mask hybrid-sleep.target
+```
+
+---
+
+### Step 9: Save Firewall Rules
 ```bash
 sudo apt install netfilter-persistent -y
 sudo netfilter-persistent save
@@ -219,7 +249,14 @@ sudo netfilter-persistent save
 
 ---
 
-### Step 9: Clone the Project
+### Step 10: Install Required Tools
+```bash
+sudo apt install nmap -y
+```
+
+---
+
+### Step 11: Clone the Project
 ```bash
 cd ~
 git clone https://github.com/Muhtasim19/exam-firewall.git
@@ -228,7 +265,7 @@ cd exam-firewall/exam-firewall
 
 ---
 
-### Step 10: Set Up Python Environment
+### Step 12: Set Up Python Environment
 ```bash
 python3 -m venv venv
 source venv/bin/activate
@@ -238,31 +275,25 @@ pip install gunicorn
 
 ---
 
-### Step 11: Install conntrack
-```bash
-sudo apt install conntrack -y
-```
-
----
-
-### Step 12: Configure sudoers (Required for Dashboard)
-The dashboard needs to run iptables and systemctl without password prompts.
-
+### Step 13: Configure sudoers (Required for Dashboard)
 ```bash
 sudo visudo
 ```
 
-Add at the bottom (replace `admin_luniux` with your username):
+Add at the bottom:
 ```
 admin_luniux ALL=(ALL) NOPASSWD: /sbin/iptables
+admin_luniux ALL=(ALL) NOPASSWD: /usr/sbin/ip6tables
 admin_luniux ALL=(ALL) NOPASSWD: /usr/bin/systemctl
 admin_luniux ALL=(ALL) NOPASSWD: /bin/cp
 admin_luniux ALL=(ALL) NOPASSWD: /bin/rm
+admin_luniux ALL=(ALL) NOPASSWD: /usr/bin/nmap
+admin_luniux ALL=(ALL) NOPASSWD: /usr/bin/conntrack
 ```
 
 ---
 
-### Step 13: Set Up Nginx
+### Step 14: Set Up Nginx
 ```bash
 sudo apt install nginx -y
 sudo nano /etc/nginx/sites-available/exam-dashboard
@@ -272,7 +303,7 @@ Paste:
 ```nginx
 server {
     listen 80;
-    server_name 10.10.32.70;
+    server_name _;
 
     location / {
         proxy_pass http://127.0.0.1:5000;
@@ -299,7 +330,7 @@ sudo netfilter-persistent save
 
 ---
 
-### Step 14: Set Up Systemd Service (Auto-start)
+### Step 15: Set Up Systemd Service (Auto-start)
 ```bash
 sudo nano /etc/systemd/system/exam-dashboard.service
 ```
@@ -335,7 +366,7 @@ sudo systemctl start exam-dashboard
 ### Access the Dashboard
 Teacher opens a browser and goes to:
 ```
-http://10.10.32.70
+http://10.10.32.
 ```
 
 Login with your admin password.
@@ -383,11 +414,13 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 ## Dashboard Features
 - 🔐 Admin login with password protection and lockout after 5 failed attempts
 - 📋 View all connected student devices (IP, MAC, Hostname, Status)
+- 🔄 Manual device refresh using nmap subnet scan
 - 🚫 Block / Unblock individual devices (cuts ALL internet for that device)
 - ⛔ Kill All Internet — disconnects every student instantly
 - ✅ Restore All Internet — brings everyone back online
-- 🔴 Enable / Disable Exam Mode
-- 🔄 Auto-refreshes every 10 seconds
+- 🔴 Enable / Disable Exam Mode (blocks AI sites, auto-resolves IPs)
+- 🔒 Enable / Disable Strict Mode (Classroom & Docs only)
+- 🔄 Auto-refreshes every 10 seconds with countdown timer
 
 ---
 
@@ -399,13 +432,28 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 
 ---
 
+## How Exam Mode Works
+1. Copies `dns/blocked_domains.conf` → `/etc/dnsmasq.d/exam-block.conf`
+2. Restarts dnsmasq — blocked domains resolve to `0.0.0.0`
+3. Auto-resolves current IPs for ChatGPT and Gemini
+4. Adds direct IP DROP rules for those ranges
+5. On disable — removes all IP blocks and DNS block file
+
+---
+
+## How Strict Mode Works
+1. Enables DNS blocking (same as exam mode)
+2. Whitelists Google Classroom, Docs, and Accounts IPs
+3. Drops ALL other student internet traffic
+4. On disable — removes all strict rules and DNS blocks
+
+---
+
 ## How DNS Blocking Works
-1. Dashboard copies `dns/blocked_domains.conf` → `/etc/dnsmasq.d/exam-block.conf`
-2. dnsmasq resolves blocked domains to `0.0.0.0` (unreachable)
-3. All student DNS requests are forced through the firewall
-4. `filter-AAAA` blocks IPv6 DNS responses — students cannot bypass using IPv6
-5. Students cannot bypass by using Google DNS or Cloudflare DNS
-6. `conntrack -F` flushes all existing connections when exam mode starts
+1. dnsmasq resolves blocked domains to `0.0.0.0` (unreachable)
+2. All student DNS requests are forced through the firewall
+3. `filter-AAAA` blocks IPv6 DNS — students cannot bypass using IPv6
+4. Students cannot use Google DNS or Cloudflare DNS
 
 ---
 
@@ -413,13 +461,16 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 
 | Problem | Fix |
 |---------|-----|
-| Dashboard asks for Linux password | Add sudoers entries (Step 12) |
-| Websites not blocked | Check `/etc/dnsmasq.conf` has `conf-dir=/etc/dnsmasq.d/,*.conf` uncommented |
+| Dashboard asks for Linux password | Add sudoers entries (Step 13) |
+| Websites not blocked | Check `/etc/dnsmasq.conf` has `conf-dir=/etc/dnsmasq.d/,*.conf` |
 | Sites blocked but IPv6 still works | Check `filter-AAAA` is in `/etc/dnsmasq.conf` |
-| Hostnames show as Unknown | Check `isc-dhcp-server` is running: `sudo systemctl status isc-dhcp-server` |
+| Hostnames show as Unknown | Check `isc-dhcp-server`: `sudo systemctl status isc-dhcp-server` |
 | Dashboard not starting | Check service: `sudo systemctl status exam-dashboard` |
-| Tester cannot access dashboard | Check Nginx: `sudo systemctl status nginx` |
-| Kill switch won't restore | Run `sudo iptables -D FORWARD -i eno1 -o enp2s0 -j DROP` until it says bad rule |
+| Teacher cannot access dashboard | Check Nginx: `sudo systemctl status nginx` |
+| Kill switch won't restore | Run `sudo iptables -D FORWARD -i eno1 -o enp2s0 -j DROP` until bad rule |
+| dnsmasq fails on boot | Check override: `sudo systemctl cat dnsmasq` |
+| Devices disappear from dashboard | Click Refresh Devices button or wait for auto-refresh |
+| Server goes to sleep | Run `sudo systemctl mask sleep.target suspend.target` |
 
 ---
 
@@ -435,10 +486,14 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 ✅ Device detection with hostname  
 ✅ Individual device blocking/unblocking  
 ✅ Kill switch / Restore all internet  
-✅ Exam mode flushes existing connections  
+✅ Exam mode with auto IP detection  
+✅ Strict mode (Classroom & Docs only)  
+✅ Manual device refresh with nmap  
+✅ Auto-refresh with countdown timer  
 ✅ Auto-start on reboot  
+✅ Server never sleeps  
+✅ dnsmasq waits for network on boot  
 ✅ GitHub-managed block list  
-
 
 ---
 

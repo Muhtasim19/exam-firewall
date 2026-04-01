@@ -114,10 +114,7 @@ def exam_on():
 
     run_safe("systemctl restart dnsmasq")
 
-    # Flush all connections to drop existing AI sessions
-    run_safe("conntrack -F")
-
-    # Combine static + dynamic IP blocks
+    # Block IP ranges - no conntrack flush needed
     dynamic_ips = get_ai_ips()
     all_blocks = list(set(IP_BLOCKS + dynamic_ips))
 
@@ -167,20 +164,14 @@ def strict_mode_on():
     ensure_chain()
     strict_mode_off()
 
-    # Enable DNS blocking to block Gemini/AI via DNS
     if os.path.exists(DNS_SOURCE_FILE):
         run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
     run_safe("systemctl restart dnsmasq")
 
-    run_safe("conntrack -F")
-
-    # Add whitelist ACCEPT rules
     for i, ip in enumerate(WHITELIST_IPS):
         run_safe(f"iptables -I FORWARD {i + 2} -i eno1 -d {ip} -j ACCEPT")
 
-    # Block ALL other traffic
     run_safe(f"iptables -I FORWARD {len(WHITELIST_IPS) + 2} -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
-
 
 def strict_mode_off():
     # Remove whitelist ACCEPT rules

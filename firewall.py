@@ -286,6 +286,10 @@ def connected_devices():
     blocked_ips = get_blocked_ips()
     hostnames = get_dhcp_hostnames()
 
+    # Flush failed/incomplete ARP entries so waking devices are rediscovered
+    run_safe("ip neigh flush dev eno1 nud failed")
+    run_safe("ip neigh flush dev eno1 nud incomplete")
+
     output = subprocess.check_output("ip neigh", shell=True, text=True)
 
     for line in output.splitlines():

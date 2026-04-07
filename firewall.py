@@ -7,7 +7,6 @@ EXAM_CHAIN = "EXAM_BLOCK"
 DNS_BLOCK_FILE = "/etc/dnsmasq.d/exam-block.conf"
 DNS_SOURCE_FILE = "dns/blocked_domains.conf"
 
-# Static IP blocks as fallback
 IP_BLOCKS = [
     "104.18.32.0/24",
     "104.18.33.0/24",
@@ -16,7 +15,6 @@ IP_BLOCKS = [
     "172.253.112.0/21",
 ]
 
-# Domains to auto-resolve IPs for
 AI_DOMAINS = [
     "chatgpt.com",
     "openai.com",
@@ -24,15 +22,17 @@ AI_DOMAINS = [
     "bard.google.com",
 ]
 
-# Google services to whitelist in strict mode
 WHITELIST_IPS = [
-    "142.251.0.0/16",    # Google Classroom + Docs + Meet
-    "172.253.0.0/16",    # Google accounts + services
+    "142.251.45.0/24",   # Google Classroom
+    "142.251.211.0/24",  # Google Docs
+    "172.253.62.0/24",   # Google Accounts
     "216.239.32.0/19",   # Google services
     "64.233.160.0/19",   # Google services
     "74.125.0.0/16",     # Google broadly
     "172.217.0.0/16",    # Google broadly
 ]
+
+STRICT_DROP_COMMENT = "strict-mode"
 
 
 # ==========================
@@ -76,7 +76,6 @@ def ensure_chain():
 # ==========================
 
 def get_ai_ips():
-    """Dynamically resolve current AI service IPs"""
     ip_ranges = set()
 
     for domain in AI_DOMAINS:
@@ -112,10 +111,8 @@ def exam_on():
     if os.path.exists(DNS_SOURCE_FILE):
         run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
 
-    # Reload instead of restart - much faster, no DNS gap
     run_safe("systemctl reload dnsmasq")
 
-    # Block IP ranges
     dynamic_ips = get_ai_ips()
     all_blocks = list(set(IP_BLOCKS + dynamic_ips))
 
@@ -130,11 +127,8 @@ def exam_off():
     run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
 
     run_safe(f"rm -f {DNS_BLOCK_FILE}")
-
-    # Reload instead of restart
     run_safe("systemctl reload dnsmasq")
 
-    # Remove AI IP blocks
     output = run("iptables -L FORWARD -n")
     for line in output.splitlines():
         if "DROP" not in line:
@@ -160,24 +154,21 @@ def exam_status():
 # Strict Mode
 # ==========================
 
-# Strict mode DROP rule uses a specific comment to identify it
-STRICT_DROP_COMMENT = "strict-mode"
-
 def strict_mode_on():
     ensure_chain()
     strict_mode_off()
 
     if os.path.exists(DNS_SOURCE_FILE):
         run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
-    run_safe("systemctl restart dnsmasq")
+    run_safe("systemctl reload dnsmasq")
 
     for i, ip in enumerate(WHITELIST_IPS):
         run_safe(f"iptables -I FORWARD {i + 2} -i eno1 -d {ip} -j ACCEPT")
 
     run_safe(f"iptables -I FORWARD {len(WHITELIST_IPS) + 2} -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
 
+
 def strict_mode_off():
-    # Remove whitelist ACCEPT rules
     for ip in WHITELIST_IPS:
         while True:
             result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
@@ -185,33 +176,19 @@ def strict_mode_off():
                 break
             run_safe(f"iptables -D FORWARD -i eno1 -d {ip} -j ACCEPT")
 
-    # Remove strict DROP rule
     while True:
         result = run(f"iptables -C FORWARD -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP 2>/dev/null && echo found")
         if "found" not in result:
             break
         run_safe(f"iptables -D FORWARD -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
 
-    # Remove DNS blocking
     run_safe(f"rm -f {DNS_BLOCK_FILE}")
-    run_safe("systemctl restart dnsmasq")
-
-    # Flush connections so no cached sessions survive
-    run_safe("conntrack -F")
+    run_safe("systemctl reload dnsmasq")
 
 
 def strict_status():
     output = run("iptables -L FORWARD -n -v")
     return "active" if STRICT_DROP_COMMENT in output else "inactive"
-
-
-def network_status():
-    output = run("iptables -L FORWARD -n -v")
-    for line in output.splitlines():
-        # Only match kill switch — no comment marker
-        if "DROP" in line and "eno1" in line and "enp2s0" in line and STRICT_DROP_COMMENT not in line:
-            return "killed"
-    return "active"
 
 
 # ==========================
@@ -289,7 +266,6 @@ def connected_devices():
     blocked_ips = get_blocked_ips()
     hostnames = get_dhcp_hostnames()
 
-    # Flush failed/incomplete ARP entries so waking devices are rediscovered
     run_safe("ip neigh flush dev eno1 nud failed")
     run_safe("ip neigh flush dev eno1 nud incomplete")
 
@@ -317,6 +293,16 @@ def connected_devices():
 
 
 # ==========================
+# Refresh Devices
+# ==========================
+
+def refresh_devices():
+    run_safe("ip neigh flush dev eno1 nud failed")
+    run_safe("ip neigh flush dev eno1 nud incomplete")
+    run_safe("nmap -sn 192.168.50.0/24 --send-ip -T4")
+
+
+# ==========================
 # Kill Switch
 # ==========================
 
@@ -340,7 +326,7 @@ def restore_network():
 def network_status():
     output = run("iptables -L FORWARD -n -v")
     for line in output.splitlines():
-        if "DROP" in line and "eno1" in line and "enp2s0" in line:
+        if "DROP" in line and "eno1" in line and "enp2s0" in line and STRICT_DROP_COMMENT not in line:
             return "killed"
     return "active"
 

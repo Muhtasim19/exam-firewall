@@ -39,6 +39,8 @@ This firewall enforces rules **before traffic reaches the internet**.
 - Blocked domain list managed from GitHub
 - Served via Nginx + Gunicorn (production ready)
 - Server never sleeps (suspend/hibernate disabled)
+- Live device logging to `/var/log/exam-firewall.log`
+- Cron jobs for ARP refresh and device logging every minute
 
 ---
 
@@ -61,17 +63,17 @@ Linux Firewall Server  (WAN: 10.10.32.70 / LAN: 192.168.50.1)
 │
 Ethernet Switch
 │
-Student Devices  (192.168.50.100 – 192.168.50.254)
+Student Devices  (192.168.50.100 – 192.168.50.200)
 ```
 
 Teacher/Admin accesses dashboard via:
 ```
-http://10.10.32.
+http://10.10.32.70
 ```
 
 SSH access:
 ```
-ssh admin_luniux@10.10.32.
+ssh admin_luniux@10.10.32.70
 ```
 
 ---
@@ -84,7 +86,7 @@ ssh admin_luniux@10.10.32.
 - `dnsmasq` — DNS filtering (blocks websites)
 - `netfilter-persistent` — saves firewall rules across reboots
 - `Flask` — web dashboard backend
-- `Gunicorn` — production WSGI server
+- `Gunicorn` — production WSGI server (3 workers)
 - `Nginx` — reverse proxy (serves dashboard on port 80)
 - `nmap` — network scanning for device refresh
 - `Python 3` — firewall logic
@@ -166,14 +168,23 @@ sudo apt install isc-dhcp-server -y
 
 Configure `/etc/dhcp/dhcpd.conf`:
 ```
+authoritative;
+
+default-lease-time 86400;
+max-lease-time 86400;
+ddns-update-style none;
+
 subnet 192.168.50.0 netmask 255.255.255.0 {
-  range 192.168.50.100 192.168.50.200;
-  option routers 192.168.50.1;
-  option domain-name-servers 192.168.50.1;
-  default-lease-time 600;
-  max-lease-time 600;
+    range 192.168.50.100 192.168.50.200;
+    option routers 192.168.50.1;
+    option domain-name-servers 192.168.50.1;
+    option subnet-mask 255.255.255.0;
+    option broadcast-address 192.168.50.255;
 }
 ```
+
+> ⚠️ `authoritative` is required so managed Windows devices accept the DHCP offer.
+> ⚠️ 86400 second (24 hour) leases prevent frequent reconnection issues.
 
 ---
 
@@ -195,7 +206,7 @@ filter-AAAA
 
 > ⚠️ `filter-AAAA` blocks IPv6 DNS responses so students cannot bypass DNS blocking using IPv6.
 
-Create dnsmasq override to wait for network:
+Create dnsmasq override to wait for network on boot:
 ```bash
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d/
 sudo nano /etc/systemd/system/dnsmasq.service.d/override.conf
@@ -361,15 +372,41 @@ sudo systemctl start exam-dashboard
 
 ---
 
+### Step 16: Set Up Cron Jobs
+```bash
+sudo crontab -e
+```
+
+Add these two lines:
+```
+* * * * * ip neigh flush dev eno1 nud failed && ip neigh flush dev eno1 nud incomplete
+* * * * * cd /home/admin_luniux/exam-firewall/exam-firewall && /home/admin_luniux/exam-firewall/exam-firewall/venv/bin/python3 -c "import firewall; firewall.connected_devices()"
+```
+
+---
+
 ## Daily Use (After Setup)
 
 ### Access the Dashboard
 Teacher opens a browser and goes to:
-```
+``
 http://10.10.32.
 ```
 
 Login with your admin password.
+
+---
+
+### Monitor via SSH
+```bash
+ssh admin_luniux@10.10.32.
+
+# Watch live device log
+sudo tail -f /var/log/exam-firewall.log
+
+# Check all services
+sudo systemctl is-active exam-dashboard nginx dnsmasq isc-dhcp-server
+```
 
 ---
 
@@ -378,7 +415,7 @@ Edit `dns/blocked_domains.conf` on GitHub, then on the server:
 ```bash
 cd ~/exam-firewall/exam-firewall
 git pull
-sudo systemctl restart dnsmasq
+sudo systemctl reload dnsmasq
 ```
 
 Then toggle Exam Mode off and on from the dashboard to reload the new list.
@@ -434,8 +471,8 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 
 ## How Exam Mode Works
 1. Copies `dns/blocked_domains.conf` → `/etc/dnsmasq.d/exam-block.conf`
-2. Restarts dnsmasq — blocked domains resolve to `0.0.0.0`
-3. Auto-resolves current IPs for ChatGPT and Gemini
+2. Reloads dnsmasq — blocked domains resolve to `0.0.0.0`
+3. Auto-resolves current IPs for ChatGPT and Gemini using `dig`
 4. Adds direct IP DROP rules for those ranges
 5. On disable — removes all IP blocks and DNS block file
 
@@ -444,7 +481,7 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 ## How Strict Mode Works
 1. Enables DNS blocking (same as exam mode)
 2. Whitelists Google Classroom, Docs, and Accounts IPs
-3. Drops ALL other student internet traffic
+3. Drops ALL other student internet traffic using iptables comment marker `strict-mode`
 4. On disable — removes all strict rules and DNS blocks
 
 ---
@@ -454,6 +491,19 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 2. All student DNS requests are forced through the firewall
 3. `filter-AAAA` blocks IPv6 DNS — students cannot bypass using IPv6
 4. Students cannot use Google DNS or Cloudflare DNS
+
+---
+
+## Monitoring & Logs
+
+| Log | Command |
+|-----|---------|
+| Live device log | `sudo tail -f /var/log/exam-firewall.log` |
+| Dashboard logs | `sudo journalctl -u exam-dashboard -n 50 --no-pager` |
+| Nginx error log | `sudo tail -f /var/log/nginx/error.log` |
+| dnsmasq log | `sudo journalctl -u dnsmasq -n 50 --no-pager` |
+| DHCP log | `sudo journalctl -u isc-dhcp-server -n 50 --no-pager` |
+| All live logs | `sudo journalctl -f` |
 
 ---
 
@@ -469,20 +519,23 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 | Teacher cannot access dashboard | Check Nginx: `sudo systemctl status nginx` |
 | Kill switch won't restore | Run `sudo iptables -D FORWARD -i eno1 -o enp2s0 -j DROP` until bad rule |
 | dnsmasq fails on boot | Check override: `sudo systemctl cat dnsmasq` |
-| Devices disappear from dashboard | Click Refresh Devices button or wait for auto-refresh |
+| Devices disappear from dashboard | Click Refresh Devices or wait for auto-refresh |
 | Server goes to sleep | Run `sudo systemctl mask sleep.target suspend.target` |
+| Student device gets 169.254.x.x | Run `ipconfig /release` then `ipconfig /renew` on device |
+| DHCP not giving IPs | Check `authoritative` is in `/etc/dhcp/dhcpd.conf` |
+| Internet drops on exam mode | dnsmasq uses `reload` not `restart` — check firewall.py |
 
 ---
 
 ## Project Status
 ✅ Firewall routing and NAT working  
-✅ DHCP assigning IPs to students  
+✅ DHCP assigning IPs to students (24 hour leases)  
 ✅ DNS filtering working  
 ✅ DNS hijacking (students cannot bypass)  
 ✅ IPv6 bypass blocked  
 ✅ Flask dashboard with login  
 ✅ Nginx + Gunicorn production setup  
-✅ Teacher access via `http://10.10.32.70`  
+✅ Teacher access via `http://10.10.32.`  
 ✅ Device detection with hostname  
 ✅ Individual device blocking/unblocking  
 ✅ Kill switch / Restore all internet  
@@ -490,10 +543,13 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 ✅ Strict mode (Classroom & Docs only)  
 ✅ Manual device refresh with nmap  
 ✅ Auto-refresh with countdown timer  
+✅ Live device logging to `/var/log/exam-firewall.log`  
+✅ Cron jobs for ARP flush and device logging  
 ✅ Auto-start on reboot  
 ✅ Server never sleeps  
 ✅ dnsmasq waits for network on boot  
 ✅ GitHub-managed block list  
+
 
 ---
 

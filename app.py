@@ -18,9 +18,6 @@ app.permanent_session_lifetime = timedelta(minutes=10)
 # =========================
 # ADMIN PASSWORD HASH
 # =========================
-# You can either:
-# 1. Keep it here (simple setup)
-# 2. Or move it to environment variable for higher security
 
 ADMIN_PASSWORD_HASH = os.environ.get(
     "ADMIN_PASSWORD_HASH",

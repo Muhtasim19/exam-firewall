@@ -1,18 +1,41 @@
-from flask import Flask, render_template, redirect, url_for, request, session, make_response
+from flask import Flask, render_template, redirect, url_for, request, session
 from functools import wraps
 from datetime import timedelta
+from werkzeug.security import check_password_hash
+from time import time
 import firewall
+import os
 
+# =========================
+# APP CONFIG
+# =========================
 app = Flask(__name__)
 app.secret_key = "3f8x92Kk29dk29s0dkX"
 
 # Session timeout (10 min inactivity)
 app.permanent_session_lifetime = timedelta(minutes=10)
 
-ADMIN_PASSWORD = "exam123"
+# =========================
+# ADMIN PASSWORD HASH
+# =========================
+# You can either:
+# 1. Keep it here (simple setup)
+# 2. Or move it to environment variable for higher security
+
+ADMIN_PASSWORD_HASH = os.environ.get(
+    "ADMIN_PASSWORD_HASH",
+    "scrypt:32768:8:1$HfFB1ZMCjYvHQ5wD$fb02e9e3be4c6e9053a2dac4a1099b7387fcf36b19fccc97dec1e6b38114fe6e9f853aabe626403573a270df28e6da53d8a67eb17124d094f25b0fec4f50a790"
+)
 
 # =========================
-# Disable Browser Caching
+# LOGIN ATTEMPT PROTECTION
+# =========================
+FAILED_LOGINS = {}
+MAX_ATTEMPTS = 5
+LOCKOUT_TIME = 300  # 5 minutes
+
+# =========================
+# DISABLE BROWSER CACHING
 # =========================
 @app.after_request
 def add_no_cache_headers(response):
@@ -22,7 +45,7 @@ def add_no_cache_headers(response):
     return response
 
 # =========================
-# Login Required Decorator
+# LOGIN REQUIRED DECORATOR
 # =========================
 def login_required(f):
     @wraps(f)
@@ -33,7 +56,7 @@ def login_required(f):
     return decorated_function
 
 # =========================
-# Refresh Session on Activity
+# REFRESH SESSION ON ACTIVITY
 # =========================
 @app.before_request
 def refresh_session():
@@ -41,27 +64,43 @@ def refresh_session():
         session.permanent = True
 
 # =========================
-# LOGIN
+# LOGIN ROUTE
 # =========================
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    client_ip = request.remote_addr
+
+    # Check lockout
+    if client_ip in FAILED_LOGINS:
+        attempts, last_attempt = FAILED_LOGINS[client_ip]
+        if attempts >= MAX_ATTEMPTS:
+            if time() - last_attempt < LOCKOUT_TIME:
+                return "Too many failed attempts. Try again in 5 minutes."
+            else:
+                FAILED_LOGINS.pop(client_ip)
+
     if request.method == "POST":
         password = request.form.get("password")
-        if password == ADMIN_PASSWORD:
+
+        if check_password_hash(ADMIN_PASSWORD_HASH, password):
             session.permanent = True
             session["logged_in"] = True
+            FAILED_LOGINS.pop(client_ip, None)
             return redirect(url_for("index"))
+        else:
+            attempts, _ = FAILED_LOGINS.get(client_ip, (0, 0))
+            FAILED_LOGINS[client_ip] = (attempts + 1, time())
+
     return render_template("login.html")
 
 # =========================
-# LOGOUT
+# LOGOUT ROUTE
 # =========================
 @app.route("/logout")
-@login_required
 def logout():
     session.clear()
     response = redirect(url_for("login"))
-    response.set_cookie("session", "", expires=0)
+    response.delete_cookie("session")
     return response
 
 # =========================
@@ -72,12 +111,16 @@ def logout():
 def index():
     exam_status = firewall.exam_status()
     devices = firewall.connected_devices()
+    network_status = firewall.network_status()
+    strict_status = firewall.strict_status()
+
     return render_template(
         "index.html",
         exam_status=exam_status,
-        devices=devices
+        devices=devices,
+        network_status=network_status,
+        strict_status=strict_status
     )
-
 # =========================
 # EXAM CONTROL
 # =========================
@@ -94,22 +137,59 @@ def exam_off():
     return redirect(url_for("index"))
 
 # =========================
-# DEVICE CONTROL
+# DEVICE CONTROL (USE IP)
 # =========================
-@app.route("/device/block/<mac>")
+@app.route("/device/block/<ip>")
 @login_required
-def block_device(mac):
-    firewall.block_device(mac)
+def block_device(ip):
+    firewall.block_device(ip)
     return redirect(url_for("index"))
 
-@app.route("/device/unblock/<mac>")
+@app.route("/device/unblock/<ip>")
 @login_required
-def unblock_device(mac):
-    firewall.unblock_device(mac)
+def unblock_device(ip):
+    firewall.unblock_device(ip)
+    return redirect(url_for("index"))
+
+# =========================
+# Device kill/restore
+# =========================
+# CORRECT - different function names
+@app.route("/network/kill")
+@login_required
+def network_kill():
+    firewall.kill_network()
+    return redirect(url_for("index"))
+
+@app.route("/network/restore")
+@login_required
+def network_restore():
+    firewall.restore_network()
+    return redirect(url_for("index"))
+
+@app.route("/strict/on")
+@login_required
+def strict_on():
+    firewall.strict_mode_on()
+    return redirect(url_for("index"))
+
+@app.route("/strict/off")
+@login_required
+def strict_off():
+    firewall.strict_mode_off()
+    return redirect(url_for("index"))
+
+# =========================
+# Device Refresh
+# =========================
+@app.route("/devices/refresh")
+@login_required
+def refresh_devices():
+    firewall.refresh_devices()
     return redirect(url_for("index"))
 
 # =========================
 # RUN
 # =========================
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000)
+    app.run(host="0.0.0.0", port=5000)

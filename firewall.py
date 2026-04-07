@@ -1,10 +1,61 @@
 import subprocess
+import os
+import logging
 
 LAN_PREFIX = "192.168.50."
+EXAM_CHAIN = "EXAM_BLOCK"
+
+DNS_BLOCK_FILE = "/etc/dnsmasq.d/exam-block.conf"
+DNS_SOURCE_FILE = "dns/blocked_domains.conf"
+
+IP_BLOCKS = [
+    "104.18.32.0/24",
+    "104.18.33.0/24",
+    "172.64.154.0/24",
+    "172.64.155.0/24",
+    "172.253.112.0/21",
+]
+
+AI_DOMAINS = [
+    "chatgpt.com",
+    "openai.com",
+    "gemini.google.com",
+    "bard.google.com",
+]
+
+WHITELIST_IPS = [
+    "142.251.45.0/24",   # Google Classroom
+    "142.251.211.0/24",  # Google Docs
+    "172.253.62.0/24",   # Google Accounts
+    "216.239.32.0/19",   # Google services
+    "64.233.160.0/19",   # Google services
+    "74.125.0.0/16",     # Google broadly
+    "172.217.0.0/16",    # Google broadly
+]
+
+STRICT_DROP_COMMENT = "strict-mode"
+
+# ==========================
+# Logging Setup
+# ==========================
+logging.basicConfig(
+    filename='/var/log/exam-firewall.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s'
+)
+
+def log(msg):
+    logging.info(msg)
+    print(msg)
+
+
+# ==========================
+# Utility
+# ==========================
 
 def run(cmd):
     result = subprocess.run(
-        cmd,
+        f"sudo {cmd}",
         shell=True,
         text=True,
         capture_output=True
@@ -12,23 +63,219 @@ def run(cmd):
     return result.stdout.strip()
 
 
+def run_safe(cmd):
+    subprocess.run(f"sudo {cmd}", shell=True)
+
+
 # ==========================
-# Exam Mode Control
+# Firewall Setup
+# ==========================
+
+def ensure_chain():
+    chains = run("iptables -L")
+    if EXAM_CHAIN not in chains:
+        run_safe(f"iptables -N {EXAM_CHAIN}")
+
+    chain_rules = run(f"iptables -L {EXAM_CHAIN}")
+    if "RETURN" not in chain_rules:
+        run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
+
+    forward_rules = run("iptables -L FORWARD")
+    if EXAM_CHAIN not in forward_rules:
+        run_safe(f"iptables -I FORWARD 1 -j {EXAM_CHAIN}")
+
+
+# ==========================
+# Auto IP Detection
+# ==========================
+
+def get_ai_ips():
+    ip_ranges = set()
+
+    for domain in AI_DOMAINS:
+        result = subprocess.run(
+            f"dig +short {domain}",
+            shell=True,
+            text=True,
+            capture_output=True
+        )
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line or line.endswith('.'):
+                continue
+            parts = line.split('.')
+            if len(parts) == 4:
+                try:
+                    [int(p) for p in parts]
+                    subnet = f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+                    ip_ranges.add(subnet)
+                except ValueError:
+                    continue
+
+    return list(ip_ranges)
+
+
+# ==========================
+# Exam Mode
 # ==========================
 
 def exam_on():
-    run("systemctl start dnsmasq")
+    log("=== EXAM MODE ENABLED ===")
+    ensure_chain()
+
+    if os.path.exists(DNS_SOURCE_FILE):
+        run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
+
+    run_safe("systemctl reload dnsmasq")
+
+    dynamic_ips = get_ai_ips()
+    all_blocks = list(set(IP_BLOCKS + dynamic_ips))
+
+    log(f"Blocking {len(all_blocks)} IP ranges")
+    for ip in all_blocks:
+        result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            run_safe(f"iptables -I FORWARD 1 -i eno1 -d {ip} -j DROP")
+
 
 def exam_off():
-    run("systemctl stop dnsmasq")
+    log("=== EXAM MODE DISABLED ===")
+    run_safe(f"iptables -F {EXAM_CHAIN}")
+    run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
+
+    run_safe(f"rm -f {DNS_BLOCK_FILE}")
+    run_safe("systemctl reload dnsmasq")
+
+    output = run("iptables -L FORWARD -n")
+    for line in output.splitlines():
+        if "DROP" not in line:
+            continue
+        parts = line.split()
+        for part in parts:
+            if "/" in part and not any([
+                part.startswith("1.1.1"),
+                part.startswith("8.8"),
+                part.startswith("9.9"),
+                part == "0.0.0.0/0"
+            ]):
+                run_safe(f"iptables -D FORWARD -i eno1 -d {part} -j DROP")
+
 
 def exam_status():
-    result = subprocess.run(
-        ["systemctl", "is-active", "dnsmasq"],
-        capture_output=True,
-        text=True
-    )
-    return result.stdout.strip()
+    if os.path.exists(DNS_BLOCK_FILE):
+        return "active"
+    return "inactive"
+
+
+# ==========================
+# Strict Mode
+# ==========================
+
+def strict_mode_on():
+    log("=== STRICT MODE ENABLED ===")
+    ensure_chain()
+    strict_mode_off()
+
+    if os.path.exists(DNS_SOURCE_FILE):
+        run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
+    run_safe("systemctl reload dnsmasq")
+
+    for i, ip in enumerate(WHITELIST_IPS):
+        run_safe(f"iptables -I FORWARD {i + 2} -i eno1 -d {ip} -j ACCEPT")
+
+    run_safe(f"iptables -I FORWARD {len(WHITELIST_IPS) + 2} -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
+
+
+def strict_mode_off():
+    log("=== STRICT MODE DISABLED ===")
+    for ip in WHITELIST_IPS:
+        while True:
+            result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
+            if "found" not in result:
+                break
+            run_safe(f"iptables -D FORWARD -i eno1 -d {ip} -j ACCEPT")
+
+    while True:
+        result = run(f"iptables -C FORWARD -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            break
+        run_safe(f"iptables -D FORWARD -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
+
+    run_safe(f"rm -f {DNS_BLOCK_FILE}")
+    run_safe("systemctl reload dnsmasq")
+
+
+def strict_status():
+    output = run("iptables -L FORWARD -n -v")
+    return "active" if STRICT_DROP_COMMENT in output else "inactive"
+
+
+# ==========================
+# DHCP Hostname Detection
+# ==========================
+
+def get_dhcp_hostnames():
+    hostnames = {}
+
+    try:
+        with open("/var/lib/dhcp/dhcpd.leases", "r") as f:
+            content = f.read()
+
+        blocks = content.split("lease ")
+
+        for block in blocks:
+            if "hardware ethernet" not in block:
+                continue
+
+            lines = block.splitlines()
+            ip = lines[0].strip().strip("{").strip()
+
+            hostname = ""
+
+            for line in lines:
+                if "client-hostname" in line:
+                    hostname = line.split()[-1].replace(";", "").replace('"', "")
+
+            if ip and hostname:
+                hostnames[ip] = hostname
+
+    except:
+        pass
+
+    return hostnames
+
+
+# ==========================
+# Device Blocking
+# ==========================
+
+def block_device(ip):
+    log(f"BLOCKING device: {ip}")
+    result = run(f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP 2>/dev/null && echo found")
+    if "found" not in result:
+        run_safe(f"iptables -I {EXAM_CHAIN} 1 -s {ip} -j DROP")
+
+
+def unblock_device(ip):
+    log(f"UNBLOCKING device: {ip}")
+    while True:
+        result = run(f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            break
+        run_safe(f"iptables -D {EXAM_CHAIN} -s {ip} -j DROP")
+
+
+def get_blocked_ips():
+    blocked = set()
+    output = run(f"iptables -L {EXAM_CHAIN} -n")
+
+    for line in output.splitlines():
+        parts = line.split()
+        for part in parts:
+            if part.startswith(LAN_PREFIX):
+                blocked.add(part)
+
+    return blocked
 
 
 # ==========================
@@ -36,19 +283,12 @@ def exam_status():
 # ==========================
 
 def connected_devices():
-    devices = []
-    leases = {}
+    devices = {}
     blocked_ips = get_blocked_ips()
+    hostnames = get_dhcp_hostnames()
 
-    # Read DHCP leases
-    try:
-        with open("/var/lib/misc/dnsmasq.leases") as f:
-            for line in f:
-                parts = line.split()
-                if len(parts) >= 4:
-                    leases[parts[2]] = parts[3]
-    except:
-        pass
+    run_safe("ip neigh flush dev eno1 nud failed")
+    run_safe("ip neigh flush dev eno1 nud incomplete")
 
     output = subprocess.check_output("ip neigh", shell=True, text=True)
 
@@ -61,36 +301,70 @@ def connected_devices():
             state = parts[-1]
 
             if ip.startswith(LAN_PREFIX):
-                devices.append({
-                    "ip": ip,
-                    "mac": mac,
-                    "hostname": leases.get(ip, "Unknown"),
-                    "state": state,
-                    "blocked": ip in blocked_ips
-                })
+                if ip not in devices or state == "REACHABLE":
+                    devices[ip] = {
+                        "ip": ip,
+                        "mac": mac,
+                        "hostname": hostnames.get(ip, "Unknown"),
+                        "state": state,
+                        "blocked": ip in blocked_ips
+                    }
 
-    return devices
+    # Log connected devices
+    log(f"--- Connected Devices ({len(devices)}) ---")
+    for d in devices.values():
+        status = "BLOCKED" if d["blocked"] else "ALLOWED"
+        log(f"  {d['hostname']} | {d['ip']} | {d['state']} | {status}")
+
+    return list(devices.values())
 
 
 # ==========================
-# Blocking Logic (Clean)
+# Refresh Devices
 # ==========================
 
-def block_device(ip):
-    run(f"iptables -A EXAM_BLOCK -s {ip} -j DROP")
+def refresh_devices():
+    log("=== MANUAL DEVICE REFRESH ===")
+    run_safe("ip neigh flush dev eno1 nud failed")
+    run_safe("ip neigh flush dev eno1 nud incomplete")
+    run_safe("nmap -sn 192.168.50.0/24 --send-ip -T4")
 
-def unblock_device(ip):
-    run(f"iptables -D EXAM_BLOCK -s {ip} -j DROP")
 
-def get_blocked_ips():
-    blocked = set()
+# ==========================
+# Kill Switch
+# ==========================
 
-    output = run("iptables -L EXAM_BLOCK -n")
+def kill_network():
+    log("=== KILL SWITCH ACTIVATED ===")
+    while True:
+        result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            break
+        run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
+    run_safe("iptables -I FORWARD 1 -i eno1 -o enp2s0 -j DROP")
 
+
+def restore_network():
+    log("=== NETWORK RESTORED ===")
+    while True:
+        result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
+        if "found" not in result:
+            break
+        run_safe("iptables -D FORWARD -i eno1 -o enp2s0 -j DROP")
+
+
+def network_status():
+    output = run("iptables -L FORWARD -n -v")
     for line in output.splitlines():
-        parts = line.split()
-        for part in parts:
-            if part.startswith(LAN_PREFIX):
-                blocked.add(part)
+        if "DROP" in line and "eno1" in line and "enp2s0" in line and STRICT_DROP_COMMENT not in line:
+            return "killed"
+    return "active"
 
-    return blocked
+
+# ==========================
+# Run once at startup
+# ==========================
+import sys
+if 'gunicorn' in sys.argv[0] or 'app' in sys.modules:
+    log("=== EXAM FIREWALL STARTED ===")
+    ensure_chain()

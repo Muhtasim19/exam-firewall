@@ -132,7 +132,9 @@ exam-firewall/
    - Enable OpenSSH server when asked
 6. After install, reboot and remove the USB drive
 
-> ℹ️ The server has no GUI — it's just a terminal. You control everything via SSH or the web dashboard. This is normal and recommended for a firewall server.
+> ℹ️ The server has no GUI — it's just a terminal. You control everything via SSH
+> or the web dashboard. This is normal and recommended for a firewall server.
+> If you want a desktop GUI, see the Optional section at the bottom.
 
 ---
 
@@ -504,18 +506,56 @@ Should show `EXAM_BLOCK` as the first rule.
 
 ## Optional: Install a Desktop GUI
 
-> ℹ️ This is **not recommended** for a firewall server. The server works best headless (terminal only). The web dashboard is your GUI. Only install this if you specifically need a desktop on the server machine.
+> ℹ️ This is **not recommended** for a firewall server. The server works best
+> headless (terminal only). The web dashboard at `http://YOUR_WAN_IP` is your GUI
+> for controlling everything. Only install this if you specifically need a desktop
+> on the server machine.
 
-If you want a graphical desktop on the server:
+### Install GNOME Desktop
 
 ```bash
 sudo apt install ubuntu-desktop -y
+```
+
+This takes a while to download (2-3 GB). After it finishes:
+
+```bash
 sudo reboot
 ```
 
-This installs the full GNOME desktop environment. After reboot you'll see a login screen with icons and a mouse.
+After reboot you will see a graphical login screen with icons and a mouse.
 
-> ⚠️ Installing a desktop uses significantly more RAM and CPU, and may affect firewall stability.
+### Configure Network Interfaces via Desktop Terminal
+
+After logging into the desktop, open a terminal and bring up the interfaces:
+
+```bash
+sudo ip link set eno1 up
+sudo ip link set enp2s0 up
+```
+
+Then apply netplan:
+
+```bash
+cd /etc/netplan
+sudo nano 01-netcfg.yaml
+sudo chmod 600 /etc/netplan/01-netcfg.yaml
+sudo netplan apply
+```
+
+Verify interfaces are up:
+
+```bash
+ip a show eno1
+ip a show enp2s0
+```
+
+> ⚠️ Warnings when installing ubuntu-desktop:
+> - Uses 2-3 GB extra disk space
+> - Uses 500 MB+ extra RAM constantly
+> - May slow down the firewall server
+> - Not needed for normal operation
+> - All firewall features work the same with or without the desktop
 
 ---
 

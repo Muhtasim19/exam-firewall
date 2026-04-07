@@ -112,9 +112,10 @@ def exam_on():
     if os.path.exists(DNS_SOURCE_FILE):
         run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
 
-    run_safe("systemctl restart dnsmasq")
+    # Reload instead of restart - much faster, no DNS gap
+    run_safe("systemctl reload dnsmasq")
 
-    # Block IP ranges - no conntrack flush needed
+    # Block IP ranges
     dynamic_ips = get_ai_ips()
     all_blocks = list(set(IP_BLOCKS + dynamic_ips))
 
@@ -129,9 +130,11 @@ def exam_off():
     run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
 
     run_safe(f"rm -f {DNS_BLOCK_FILE}")
-    run_safe("systemctl restart dnsmasq")
 
-    # Remove ALL AI IP blocks from FORWARD
+    # Reload instead of restart
+    run_safe("systemctl reload dnsmasq")
+
+    # Remove AI IP blocks
     output = run("iptables -L FORWARD -n")
     for line in output.splitlines():
         if "DROP" not in line:

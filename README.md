@@ -57,23 +57,26 @@ This firewall enforces rules **before traffic reaches the internet**.
 ```
 Internet
 │
-Router / Modem  (10.10.32.1)
+Router / Modem
 │
-Linux Firewall Server  (WAN: 10.10.32.** / LAN: 192.168.50.1)
+Linux Firewall Server  (WAN: YOUR_WAN_IP / LAN: 192.168.50.1)
 │
 Ethernet Switch
 │
 Student Devices  (192.168.50.100 – 192.168.50.200)
 ```
 
+> ⚠️ Replace `YOUR_WAN_IP` with the actual IP your server gets from the school router.
+> Run `ip a show enp2s0` to find it after setup.
+
 Teacher/Admin accesses dashboard via:
 ```
-http://10.10.32.
+http://YOUR_WAN_IP
 ```
 
 SSH access:
 ```
-ssh admin_luniux@10.10.32.
+ssh admin_luniux@YOUR_WAN_IP
 ```
 
 ---
@@ -129,6 +132,8 @@ exam-firewall/
    - Enable OpenSSH server when asked
 6. After install, reboot and remove the USB drive
 
+> ℹ️ The server has no GUI — it's just a terminal. You control everything via SSH or the web dashboard. This is normal and recommended for a firewall server.
+
 ---
 
 ### Step 2: Bring Up Network Interfaces
@@ -179,7 +184,14 @@ ip a show eno1
 ip a show enp2s0
 ```
 
-`eno1` should show `192.168.50.1` and `enp2s0` should have a `10.10.32.x` IP from the school router.
+`eno1` should show `192.168.50.1` and `enp2s0` should have an IP from the school router.
+
+Note your WAN IP:
+```bash
+ip a show enp2s0 | grep inet
+```
+
+This is your `YOUR_WAN_IP` — write it down. You'll use it to access the dashboard.
 
 ---
 
@@ -490,12 +502,29 @@ Should show `EXAM_BLOCK` as the first rule.
 
 ---
 
+## Optional: Install a Desktop GUI
+
+> ℹ️ This is **not recommended** for a firewall server. The server works best headless (terminal only). The web dashboard is your GUI. Only install this if you specifically need a desktop on the server machine.
+
+If you want a graphical desktop on the server:
+
+```bash
+sudo apt install ubuntu-desktop -y
+sudo reboot
+```
+
+This installs the full GNOME desktop environment. After reboot you'll see a login screen with icons and a mouse.
+
+> ⚠️ Installing a desktop uses significantly more RAM and CPU, and may affect firewall stability.
+
+---
+
 ## Daily Use (After Setup)
 
 ### Access the Dashboard
 Teacher opens a browser and goes to:
 ```
-http://10.10.32.
+http://YOUR_WAN_IP
 ```
 
 Login with your admin password.
@@ -504,7 +533,7 @@ Login with your admin password.
 
 ### Monitor via SSH
 ```bash
-ssh admin_luniux@10.10.32.
+ssh admin_luniux@YOUR_WAN_IP
 
 # Watch live device log
 sudo tail -f /var/log/exam-firewall.log
@@ -642,7 +671,7 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 ✅ IPv6 bypass blocked  
 ✅ Flask dashboard with login  
 ✅ Nginx + Gunicorn production setup  
-✅ Teacher access via `http://10.10.32.`  
+✅ Teacher access via `http://YOUR_WAN_IP`  
 ✅ Device detection with hostname  
 ✅ Individual device blocking/unblocking  
 ✅ Kill switch / Restore all internet  

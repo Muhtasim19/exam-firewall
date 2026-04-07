@@ -1,5 +1,6 @@
 import subprocess
 import os
+import logging
 
 LAN_PREFIX = "192.168.50."
 EXAM_CHAIN = "EXAM_BLOCK"
@@ -33,6 +34,19 @@ WHITELIST_IPS = [
 ]
 
 STRICT_DROP_COMMENT = "strict-mode"
+
+# ==========================
+# Logging Setup
+# ==========================
+logging.basicConfig(
+    filename='/var/log/exam-firewall.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s'
+)
+
+def log(msg):
+    logging.info(msg)
+    print(msg)
 
 
 # ==========================
@@ -106,6 +120,7 @@ def get_ai_ips():
 # ==========================
 
 def exam_on():
+    log("=== EXAM MODE ENABLED ===")
     ensure_chain()
 
     if os.path.exists(DNS_SOURCE_FILE):
@@ -116,6 +131,7 @@ def exam_on():
     dynamic_ips = get_ai_ips()
     all_blocks = list(set(IP_BLOCKS + dynamic_ips))
 
+    log(f"Blocking {len(all_blocks)} IP ranges")
     for ip in all_blocks:
         result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j DROP 2>/dev/null && echo found")
         if "found" not in result:
@@ -123,6 +139,7 @@ def exam_on():
 
 
 def exam_off():
+    log("=== EXAM MODE DISABLED ===")
     run_safe(f"iptables -F {EXAM_CHAIN}")
     run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
 
@@ -155,6 +172,7 @@ def exam_status():
 # ==========================
 
 def strict_mode_on():
+    log("=== STRICT MODE ENABLED ===")
     ensure_chain()
     strict_mode_off()
 
@@ -169,6 +187,7 @@ def strict_mode_on():
 
 
 def strict_mode_off():
+    log("=== STRICT MODE DISABLED ===")
     for ip in WHITELIST_IPS:
         while True:
             result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
@@ -231,12 +250,14 @@ def get_dhcp_hostnames():
 # ==========================
 
 def block_device(ip):
+    log(f"BLOCKING device: {ip}")
     result = run(f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP 2>/dev/null && echo found")
     if "found" not in result:
         run_safe(f"iptables -I {EXAM_CHAIN} 1 -s {ip} -j DROP")
 
 
 def unblock_device(ip):
+    log(f"UNBLOCKING device: {ip}")
     while True:
         result = run(f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP 2>/dev/null && echo found")
         if "found" not in result:
@@ -289,6 +310,12 @@ def connected_devices():
                         "blocked": ip in blocked_ips
                     }
 
+    # Log connected devices
+    log(f"--- Connected Devices ({len(devices)}) ---")
+    for d in devices.values():
+        status = "BLOCKED" if d["blocked"] else "ALLOWED"
+        log(f"  {d['hostname']} | {d['ip']} | {d['state']} | {status}")
+
     return list(devices.values())
 
 
@@ -297,6 +324,7 @@ def connected_devices():
 # ==========================
 
 def refresh_devices():
+    log("=== MANUAL DEVICE REFRESH ===")
     run_safe("ip neigh flush dev eno1 nud failed")
     run_safe("ip neigh flush dev eno1 nud incomplete")
     run_safe("nmap -sn 192.168.50.0/24 --send-ip -T4")
@@ -307,6 +335,7 @@ def refresh_devices():
 # ==========================
 
 def kill_network():
+    log("=== KILL SWITCH ACTIVATED ===")
     while True:
         result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
         if "found" not in result:
@@ -316,6 +345,7 @@ def kill_network():
 
 
 def restore_network():
+    log("=== NETWORK RESTORED ===")
     while True:
         result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
         if "found" not in result:
@@ -334,4 +364,5 @@ def network_status():
 # ==========================
 # Run once at startup
 # ==========================
+log("=== EXAM FIREWALL STARTED ===")
 ensure_chain()

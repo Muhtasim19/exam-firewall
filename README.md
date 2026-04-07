@@ -45,7 +45,7 @@ This firewall enforces rules **before traffic reaches the internet**.
 ---
 
 ## Hardware Requirements
-- 1 PC running Ubuntu Server 22.04 LTS
+- 1 PC running Ubuntu 24.04.4 LTS
 - 2 Ethernet ports:
   - **WAN** (`enp2s0`): connected to the internet router
   - **LAN** (`eno1`): connected to student devices via switch
@@ -59,7 +59,7 @@ Internet
 │
 Router / Modem  (10.10.32.1)
 │
-Linux Firewall Server  (WAN: 10.10.32.70 / LAN: 192.168.50.1)
+Linux Firewall Server  (WAN: 10.10.32.** / LAN: 192.168.50.1)
 │
 Ethernet Switch
 │
@@ -68,18 +68,18 @@ Student Devices  (192.168.50.100 – 192.168.50.200)
 
 Teacher/Admin accesses dashboard via:
 ```
-http://10.10.32.70
+http://10.10.32.
 ```
 
 SSH access:
 ```
-ssh admin_luniux@10.10.32.70
+ssh admin_luniux@10.10.32.
 ```
 
 ---
 
 ## Software Used
-- Ubuntu Server 22.04 LTS
+- Ubuntu 24.04.4 LTS
 - `iptables` — firewall, routing, device blocking
 - `ip6tables` — IPv6 blocking
 - `isc-dhcp-server` — assigns IPs to student devices
@@ -117,41 +117,98 @@ exam-firewall/
 
 ---
 
-## Step-by-Step Setup Guide
+## Complete From-Scratch Setup Guide
 
-### Step 1: Install Ubuntu Server
-1. Download Ubuntu Server 22.04 LTS
-2. Install it on the firewall PC
-3. Enable OpenSSH during setup (recommended)
+### Step 1: Install Ubuntu 24.04.4 LTS
+1. Download Ubuntu 24.04.4 LTS from ubuntu.com
+2. Flash it to a USB drive using Balena Etcher or Rufus
+3. Boot the PC from the USB drive
+4. Follow the installer — choose **Ubuntu Server** (no desktop needed)
+5. During setup:
+   - Create user: `admin_luniux`
+   - Enable OpenSSH server when asked
+6. After install, reboot and remove the USB drive
 
 ---
 
-### Step 2: Identify Network Interfaces
+### Step 2: Bring Up Network Interfaces
+After first boot, bring up both network interfaces:
+
+```bash
+sudo ip link set eno1 up
+sudo ip link set enp2s0 up
+```
+
+Check they are up:
 ```bash
 ip a
 ```
-Note your two interfaces:
-- Internet-facing (example: `enp2s0`)
-- Student-facing (example: `eno1`)
+
+You should see both `eno1` and `enp2s0` listed.
 
 ---
 
-### Step 3: Enable IP Forwarding
+### Step 3: Configure Network with Netplan
 ```bash
-sudo sysctl -w net.ipv4.ip_forward=1
+cd /etc/netplan
+sudo nano 01-netcfg.yaml
 ```
 
-To make it permanent:
+Paste this config (replace interface names if different):
+```yaml
+network:
+  version: 2
+  ethernets:
+    enp2s0:
+      dhcp4: true
+    eno1:
+      addresses:
+        - 192.168.50.1/24
+      dhcp4: false
+```
+
+Save, then apply:
+```bash
+sudo chmod 600 /etc/netplan/01-netcfg.yaml
+sudo netplan apply
+```
+
+Verify:
+```bash
+ip a show eno1
+ip a show enp2s0
+```
+
+`eno1` should show `192.168.50.1` and `enp2s0` should have a `10.10.32.x` IP from the school router.
+
+---
+
+### Step 4: Update System
+```bash
+sudo apt update && sudo apt upgrade -y
+```
+
+---
+
+### Step 5: Enable IP Forwarding
 ```bash
 sudo nano /etc/sysctl.conf
-# Uncomment or add:
+```
+
+Add or uncomment:
+```
 net.ipv4.ip_forward=1
 net.ipv4.neigh.default.gc_stale_time=300
 ```
 
+Apply:
+```bash
+sudo sysctl -p
+```
+
 ---
 
-### Step 4: Set Up NAT (Internet Sharing)
+### Step 6: Set Up NAT (Internet Sharing)
 ```bash
 sudo iptables -t nat -A POSTROUTING -o enp2s0 -j MASQUERADE
 sudo iptables -A FORWARD -i eno1 -o enp2s0 -j ACCEPT
@@ -160,13 +217,27 @@ sudo iptables -A FORWARD -i enp2s0 -o eno1 -m state --state RELATED,ESTABLISHED 
 
 ---
 
-### Step 5: Install isc-dhcp-server
+### Step 7: Install isc-dhcp-server
 ```bash
-sudo apt update
 sudo apt install isc-dhcp-server -y
 ```
 
-Configure `/etc/dhcp/dhcpd.conf`:
+Configure the DHCP interface:
+```bash
+sudo nano /etc/default/isc-dhcp-server
+```
+
+Set:
+```
+INTERFACESv4="eno1"
+```
+
+Configure DHCP leases:
+```bash
+sudo nano /etc/dhcp/dhcpd.conf
+```
+
+Replace entire file with:
 ```
 authoritative;
 
@@ -183,17 +254,28 @@ subnet 192.168.50.0 netmask 255.255.255.0 {
 }
 ```
 
+Start and enable:
+```bash
+sudo systemctl enable isc-dhcp-server
+sudo systemctl start isc-dhcp-server
+```
+
 > ⚠️ `authoritative` is required so managed Windows devices accept the DHCP offer.
 > ⚠️ 86400 second (24 hour) leases prevent frequent reconnection issues.
 
 ---
 
-### Step 6: Install and Configure dnsmasq
+### Step 8: Install and Configure dnsmasq
 ```bash
 sudo apt install dnsmasq -y
 ```
 
-Edit `/etc/dnsmasq.conf`:
+Edit config:
+```bash
+sudo nano /etc/dnsmasq.conf
+```
+
+Replace with:
 ```
 bind-interfaces
 interface=eno1
@@ -203,8 +285,6 @@ no-resolv
 conf-dir=/etc/dnsmasq.d/,*.conf
 filter-AAAA
 ```
-
-> ⚠️ `filter-AAAA` blocks IPv6 DNS responses so students cannot bypass DNS blocking using IPv6.
 
 Create dnsmasq override to wait for network on boot:
 ```bash
@@ -219,9 +299,18 @@ After=network-online.target
 Wants=network-online.target
 ```
 
+Restart dnsmasq:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable dnsmasq
+sudo systemctl restart dnsmasq
+```
+
+> ⚠️ `filter-AAAA` blocks IPv6 DNS responses so students cannot bypass DNS blocking using IPv6.
+
 ---
 
-### Step 7: Force All DNS Through Firewall
+### Step 9: Force All DNS Through Firewall
 ```bash
 sudo iptables -t nat -A PREROUTING -i eno1 -p udp --dport 53 -j REDIRECT --to-ports 53
 sudo iptables -t nat -A PREROUTING -i eno1 -p tcp --dport 53 -j REDIRECT --to-ports 53
@@ -242,7 +331,7 @@ sudo ip6tables -A FORWARD -i eno1 -j DROP
 
 ---
 
-### Step 8: Disable Server Sleep
+### Step 10: Disable Server Sleep
 ```bash
 sudo systemctl mask sleep.target
 sudo systemctl mask suspend.target
@@ -252,7 +341,7 @@ sudo systemctl mask hybrid-sleep.target
 
 ---
 
-### Step 9: Save Firewall Rules
+### Step 11: Save Firewall Rules
 ```bash
 sudo apt install netfilter-persistent -y
 sudo netfilter-persistent save
@@ -260,14 +349,14 @@ sudo netfilter-persistent save
 
 ---
 
-### Step 10: Install Required Tools
+### Step 12: Install Required Tools
 ```bash
-sudo apt install nmap -y
+sudo apt install nmap git python3 python3-venv python3-pip -y
 ```
 
 ---
 
-### Step 11: Clone the Project
+### Step 13: Clone the Project
 ```bash
 cd ~
 git clone https://github.com/Muhtasim19/exam-firewall.git
@@ -276,7 +365,7 @@ cd exam-firewall/exam-firewall
 
 ---
 
-### Step 12: Set Up Python Environment
+### Step 14: Set Up Python Environment
 ```bash
 python3 -m venv venv
 source venv/bin/activate
@@ -286,7 +375,7 @@ pip install gunicorn
 
 ---
 
-### Step 13: Configure sudoers (Required for Dashboard)
+### Step 15: Configure sudoers (Required for Dashboard)
 ```bash
 sudo visudo
 ```
@@ -304,7 +393,7 @@ admin_luniux ALL=(ALL) NOPASSWD: /usr/bin/conntrack
 
 ---
 
-### Step 14: Set Up Nginx
+### Step 16: Set Up Nginx
 ```bash
 sudo apt install nginx -y
 sudo nano /etc/nginx/sites-available/exam-dashboard
@@ -341,7 +430,7 @@ sudo netfilter-persistent save
 
 ---
 
-### Step 15: Set Up Systemd Service (Auto-start)
+### Step 17: Set Up Systemd Service (Auto-start)
 ```bash
 sudo nano /etc/systemd/system/exam-dashboard.service
 ```
@@ -372,7 +461,7 @@ sudo systemctl start exam-dashboard
 
 ---
 
-### Step 16: Set Up Cron Jobs
+### Step 18: Set Up Cron Jobs
 ```bash
 sudo crontab -e
 ```
@@ -385,11 +474,27 @@ Add these two lines:
 
 ---
 
+### Step 19: Verify Everything is Running
+```bash
+sudo systemctl is-active exam-dashboard nginx dnsmasq isc-dhcp-server
+```
+
+All four should show `active`.
+
+Also verify the FORWARD chain:
+```bash
+sudo iptables -L FORWARD -n
+```
+
+Should show `EXAM_BLOCK` as the first rule.
+
+---
+
 ## Daily Use (After Setup)
 
 ### Access the Dashboard
 Teacher opens a browser and goes to:
-``
+```
 http://10.10.32.
 ```
 
@@ -511,7 +616,7 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 
 | Problem | Fix |
 |---------|-----|
-| Dashboard asks for Linux password | Add sudoers entries (Step 13) |
+| Dashboard asks for Linux password | Add sudoers entries (Step 15) |
 | Websites not blocked | Check `/etc/dnsmasq.conf` has `conf-dir=/etc/dnsmasq.d/,*.conf` |
 | Sites blocked but IPv6 still works | Check `filter-AAAA` is in `/etc/dnsmasq.conf` |
 | Hostnames show as Unknown | Check `isc-dhcp-server`: `sudo systemctl status isc-dhcp-server` |
@@ -524,6 +629,8 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 | Student device gets 169.254.x.x | Run `ipconfig /release` then `ipconfig /renew` on device |
 | DHCP not giving IPs | Check `authoritative` is in `/etc/dhcp/dhcpd.conf` |
 | Internet drops on exam mode | dnsmasq uses `reload` not `restart` — check firewall.py |
+| Network interface not up | Run `sudo ip link set eno1 up` and `sudo ip link set enp2s0 up` |
+| No IP on WAN interface | Check netplan config: `sudo cat /etc/netplan/01-netcfg.yaml` |
 
 ---
 
@@ -549,7 +656,6 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 ✅ Server never sleeps  
 ✅ dnsmasq waits for network on boot  
 ✅ GitHub-managed block list  
-
 
 ---
 

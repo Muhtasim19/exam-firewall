@@ -15,14 +15,7 @@
 </div>
 
 <h1>Exam Firewall Dashboard</h1>
-<div class="section-box">
-    <h2>Connected Devices</h2>
-    <form action="{{ url_for('refresh_devices') }}" method="get" style="display:inline;">
-        <button type="submit" style="background-color:#4a6cf7;">
-            🔄 Refresh Devices
-        </button>
-    </form>
-    <table>
+
 <div class="section-box">
     <h2>Exam & Network Control</h2>
 
@@ -64,34 +57,40 @@
             </button>
         </form>
     {% endif %}
+
     <hr style="margin: 20px 0; border: none; border-top: 1px solid #e6e9f0;">
 
-<p>
-    <strong>Strict Mode:</strong>
+    <p>
+        <strong>Strict Mode:</strong>
+        {% if strict_status == "active" %}
+            <span style="color:red;font-weight:bold;">🔒 ACTIVE — Classroom & Docs Only</span>
+        {% else %}
+            <span style="color:green;font-weight:bold;">✅ Off</span>
+        {% endif %}
+    </p>
     {% if strict_status == "active" %}
-        <span style="color:red;font-weight:bold;">🔒 ACTIVE — Classroom & Docs Only</span>
+        <form action="{{ url_for('strict_off') }}" method="get" style="display:inline;">
+            <button type="submit" style="background-color:#27ae60;">
+                ✅ Disable Strict Mode
+            </button>
+        </form>
     {% else %}
-        <span style="color:green;font-weight:bold;">✅ Off</span>
+        <form action="{{ url_for('strict_on') }}" method="get" style="display:inline;">
+            <button type="submit" style="background-color:#e67e22;">
+                🔒 Enable Strict Mode
+            </button>
+        </form>
     {% endif %}
-</p>
-{% if strict_status == "active" %}
-    <form action="{{ url_for('strict_off') }}" method="get" style="display:inline;">
-        <button type="submit" style="background-color:#27ae60;">
-            ✅ Disable Strict Mode
-        </button>
-    </form>
-{% else %}
-    <form action="{{ url_for('strict_on') }}" method="get" style="display:inline;">
-        <button type="submit" style="background-color:#e67e22;">
-            🔒 Enable Strict Mode
-        </button>
-    </form>
-{% endif %}
 </div>
 
 <div class="section-box">
-
     <h2>Connected Devices</h2>
+
+    <form action="{{ url_for('refresh_devices') }}" method="get" style="display:inline; margin-bottom:15px;">
+        <button type="submit" style="background-color:#4a6cf7;">
+            🔄 Refresh Devices
+        </button>
+    </form>
 
     <table>
         <thead>

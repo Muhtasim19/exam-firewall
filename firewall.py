@@ -364,5 +364,7 @@ def network_status():
 # ==========================
 # Run once at startup
 # ==========================
-log("=== EXAM FIREWALL STARTED ===")
-ensure_chain()
+import sys
+if 'gunicorn' in sys.argv[0] or 'app' in sys.modules:
+    log("=== EXAM FIREWALL STARTED ===")
+    ensure_chain()

@@ -180,6 +180,15 @@ def strict_off():
     return redirect(url_for("index"))
 
 # =========================
+# Device Refresh
+# =========================
+@app.route("/devices/refresh")
+@login_required
+def refresh_devices():
+    firewall.refresh_devices()
+    return redirect(url_for("index"))
+
+# =========================
 # RUN (LOCALHOST ONLY)
 # =========================
 if __name__ == "__main__":

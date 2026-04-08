@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Exam Firewall — Analytics</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0e1a;
+            --surface: #111827;
+            --surface2: #1a2235;
+            --border: #1e2d45;
+            --accent: #00d4ff;
+            --accent2: #ff6b35;
+            --green: #00ff88;
+            --red: #ff4444;
+            --yellow: #ffd700;
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --font-mono: 'JetBrains Mono', monospace;
+            --font-display: 'Syne', sans-serif;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-mono);
+            min-height: 100vh;
+            padding: 0;
+        }
+
+        /* Header */
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-title {
+            font-family: var(--font-display);
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--accent);
+            letter-spacing: -0.5px;
+        }
+
+        .header-title span {
+            color: var(--text);
+            font-weight: 400;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .live-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--green);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .live-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .logout-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            text-decoration: none;
+            font-family: var(--font-mono);
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Main layout */
+        .main {
+            padding: 24px 32px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Stats row */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--accent);
+        }
+
+        .stat-card.green::before { background: var(--green); }
+        .stat-card.orange::before { background: var(--accent2); }
+        .stat-card.yellow::before { background: var(--yellow); }
+
+        .stat-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-family: var(--font-display);
+            font-size: 36px;
+            font-weight: 800;
+            color: var(--text);
+            line-height: 1;
+        }
+
+        .stat-sub {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 6px;
+        }
+
+        /* Grid layout */
+        .grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .grid-full {
+            margin-bottom: 24px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-family: var(--font-display);
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--accent);
+        }
+
+        .card-count {
+            font-size: 11px;
+            color: var(--muted);
+            background: var(--surface2);
+            padding: 3px 10px;
+            border-radius: 20px;
+        }
+
+        /* Table */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table th {
+            padding: 10px 20px;
+            text-align: left;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--muted);
+            background: var(--surface2);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .table td {
+            padding: 12px 20px;
+            font-size: 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .table tr:hover td {
+            background: var(--surface2);
+        }
+
+        /* Badges */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-green {
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--green);
+            border: 1px solid rgba(0, 255, 136, 0.2);
+        }
+
+        .badge-red {
+            background: rgba(255, 68, 68, 0.1);
+            color: var(--red);
+            border: 1px solid rgba(255, 68, 68, 0.2);
+        }
+
+        .badge-yellow {
+            background: rgba(255, 215, 0, 0.1);
+            color: var(--yellow);
+            border: 1px solid rgba(255, 215, 0, 0.2);
+        }
+
+        .badge-blue {
+            background: rgba(0, 212, 255, 0.1);
+            color: var(--accent);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+        }
+
+        /* Device link */
+        .device-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .device-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Chart */
+        .chart-container {
+            padding: 20px;
+            height: 160px;
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+        }
+
+        .chart-bar-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            height: 100%;
+            justify-content: flex-end;
+        }
+
+        .chart-bar {
+            width: 100%;
+            background: var(--accent);
+            border-radius: 3px 3px 0 0;
+            opacity: 0.7;
+            min-height: 2px;
+            transition: opacity 0.2s;
+        }
+
+        .chart-bar:hover {
+            opacity: 1;
+        }
+
+        .chart-label {
+            font-size: 9px;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        /* Empty state */
+        .empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        /* Mono text */
+        .mono {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        /* Scrollable */
+        .scrollable {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .scrollable::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .scrollable::-webkit-scrollbar-track {
+            background: var(--surface);
+        }
+
+        .scrollable::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        /* Auto refresh info */
+        .refresh-info {
+            font-size: 10px;
+            color: var(--muted);
+            text-align: right;
+            padding: 8px 32px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-title">EXAM FIREWALL <span>/ Analytics</span></div>
+    <div class="header-right">
+        <div class="live-badge">
+            <div class="live-dot"></div>
+            Live — 1 Day Window
+        </div>
+        <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+    </div>
+</div>
+
+<div class="main">
+
+    <!-- Stats Row -->
+    <div class="stats-row">
+        <div class="stat-card green">
+            <div class="stat-label">Unique Devices Today</div>
+            <div class="stat-value">{{ devices|length }}</div>
+            <div class="stat-sub">connected in last 24h</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Peak Connections</div>
+            <div class="stat-value">{{ peak.count }}</div>
+            <div class="stat-sub">at {{ peak.timestamp }}</div>
+        </div>
+        <div class="stat-card orange">
+            <div class="stat-label">Mode Events</div>
+            <div class="stat-value">{{ mode_events|length }}</div>
+            <div class="stat-sub">exam/strict toggles</div>
+        </div>
+        <div class="stat-card yellow">
+            <div class="stat-label">Block Events</div>
+            <div class="stat-value">{{ block_events|length }}</div>
+            <div class="stat-sub">device blocks/unblocks</div>
+        </div>
+    </div>
+
+    <!-- Chart + Mode Events -->
+    <div class="grid">
+
+        <!-- Hourly Chart -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Device Activity — Hourly</div>
+            </div>
+            {% if hourly %}
+            {% set max_count = hourly|map(attribute='unique_devices')|max %}
+            <div class="chart-container">
+                {% for h in hourly %}
+                <div class="chart-bar-wrap">
+                    <div class="chart-bar" style="height: {{ ((h.unique_devices / max_count) * 100)|int }}%"
+                         title="{{ h.hour }}: {{ h.unique_devices }} devices"></div>
+                    <div class="chart-label">{{ h.hour }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty">No data yet</div>
+            {% endif %}
+        </div>
+
+        <!-- Mode Events -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Mode Events</div>
+                <div class="card-count">{{ mode_events|length }}</div>
+            </div>
+            <div class="scrollable">
+                {% if mode_events %}
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Event</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for e in mode_events %}
+                        <tr>
+                            <td class="mono">{{ e.timestamp[11:16] }}</td>
+                            <td>
+                                {% if 'EXAM' in e.event and 'ENABLED' in e.event %}
+                                    <span class="badge badge-red">{{ e.event }}</span>
+                                {% elif 'STRICT' in e.event and 'ENABLED' in e.event %}
+                                    <span class="badge badge-yellow">{{ e.event }}</span>
+                                {% elif 'KILL' in e.event %}
+                                    <span class="badge badge-red">{{ e.event }}</span>
+                                {% else %}
+                                    <span class="badge badge-green">{{ e.event }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No mode events today</div>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Devices Table -->
+    <div class="card grid-full">
+        <div class="card-header">
+            <div class="card-title">Devices Seen Today</div>
+            <div class="card-count">{{ devices|length }} devices</div>
+        </div>
+        <div class="scrollable">
+            {% if devices %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Hostname</th>
+                        <th>IP Address</th>
+                        <th>MAC Address</th>
+                        <th>First Seen</th>
+                        <th>Last Seen</th>
+                        <th>Log Entries</th>
+                        <th>Status</th>
+                        <th>Detail</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for d in devices %}
+                    <tr>
+                        <td><strong>{{ d.hostname }}</strong></td>
+                        <td class="mono">{{ d.ip }}</td>
+                        <td class="mono">{{ d.mac }}</td>
+                        <td class="mono">{{ d.first_seen[11:16] }}</td>
+                        <td class="mono">{{ d.last_seen[11:16] }}</td>
+                        <td class="mono">{{ d.log_count }}</td>
+                        <td>
+                            {% if d.was_blocked %}
+                                <span class="badge badge-red">Was Blocked</span>
+                            {% else %}
+                                <span class="badge badge-green">Clean</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('device_detail', ip=d.ip) }}" class="device-link">View →</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty">No devices logged yet — data updates every minute</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Block Events -->
+    {% if block_events %}
+    <div class="card grid-full">
+        <div class="card-header">
+            <div class="card-title">Block / Unblock Events</div>
+            <div class="card-count">{{ block_events|length }}</div>
+        </div>
+        <div class="scrollable">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Device</th>
+                        <th>IP</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for e in block_events %}
+                    <tr>
+                        <td class="mono">{{ e.timestamp[11:16] }}</td>
+                        <td><strong>{{ e.hostname }}</strong></td>
+                        <td class="mono">{{ e.ip }}</td>
+                        <td>
+                            {% if 'BLOCKING' in e.action %}
+                                <span class="badge badge-red">🚫 Blocked</span>
+                            {% else %}
+                                <span class="badge badge-green">✅ Unblocked</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+<div class="refresh-info">Auto-refreshes every 60 seconds • Data kept for 24 hours</div>
+
+<script>
+setTimeout(() => window.location.reload(), 60000);
+</script>
+
+</body>
+</html>

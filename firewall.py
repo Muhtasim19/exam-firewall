@@ -121,6 +121,12 @@ def get_ai_ips():
 
 def exam_on():
     log("=== EXAM MODE ENABLED ===")
+    try:
+        import analytics
+        analytics.log_mode_event("=== EXAM MODE ENABLED ===")
+    except:
+        pass
+
     ensure_chain()
 
     if os.path.exists(DNS_SOURCE_FILE):
@@ -140,6 +146,12 @@ def exam_on():
 
 def exam_off():
     log("=== EXAM MODE DISABLED ===")
+    try:
+        import analytics
+        analytics.log_mode_event("=== EXAM MODE DISABLED ===")
+    except:
+        pass
+
     run_safe(f"iptables -F {EXAM_CHAIN}")
     run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
 
@@ -173,6 +185,12 @@ def exam_status():
 
 def strict_mode_on():
     log("=== STRICT MODE ENABLED ===")
+    try:
+        import analytics
+        analytics.log_mode_event("=== STRICT MODE ENABLED ===")
+    except:
+        pass
+
     ensure_chain()
     strict_mode_off()
 
@@ -188,6 +206,12 @@ def strict_mode_on():
 
 def strict_mode_off():
     log("=== STRICT MODE DISABLED ===")
+    try:
+        import analytics
+        analytics.log_mode_event("=== STRICT MODE DISABLED ===")
+    except:
+        pass
+
     for ip in WHITELIST_IPS:
         while True:
             result = run(f"iptables -C FORWARD -i eno1 -d {ip} -j ACCEPT 2>/dev/null && echo found")
@@ -251,6 +275,13 @@ def get_dhcp_hostnames():
 
 def block_device(ip):
     log(f"BLOCKING device: {ip}")
+    try:
+        import analytics
+        hostname = get_dhcp_hostnames().get(ip, "Unknown")
+        analytics.log_block_event(ip, hostname, "BLOCKING")
+    except:
+        pass
+
     result = run(f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP 2>/dev/null && echo found")
     if "found" not in result:
         run_safe(f"iptables -I {EXAM_CHAIN} 1 -s {ip} -j DROP")
@@ -258,6 +289,13 @@ def block_device(ip):
 
 def unblock_device(ip):
     log(f"UNBLOCKING device: {ip}")
+    try:
+        import analytics
+        hostname = get_dhcp_hostnames().get(ip, "Unknown")
+        analytics.log_block_event(ip, hostname, "UNBLOCKING")
+    except:
+        pass
+
     while True:
         result = run(f"iptables -C {EXAM_CHAIN} -s {ip} -j DROP 2>/dev/null && echo found")
         if "found" not in result:
@@ -310,11 +348,18 @@ def connected_devices():
                         "blocked": ip in blocked_ips
                     }
 
-    # Log connected devices
+    # Log to file
     log(f"--- Connected Devices ({len(devices)}) ---")
     for d in devices.values():
         status = "BLOCKED" if d["blocked"] else "ALLOWED"
         log(f"  {d['hostname']} | {d['ip']} | {d['state']} | {status}")
+
+    # Log to analytics database
+    try:
+        import analytics
+        analytics.log_devices(list(devices.values()))
+    except:
+        pass
 
     return list(devices.values())
 
@@ -336,6 +381,12 @@ def refresh_devices():
 
 def kill_network():
     log("=== KILL SWITCH ACTIVATED ===")
+    try:
+        import analytics
+        analytics.log_mode_event("=== KILL SWITCH ACTIVATED ===")
+    except:
+        pass
+
     while True:
         result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
         if "found" not in result:
@@ -346,6 +397,12 @@ def kill_network():
 
 def restore_network():
     log("=== NETWORK RESTORED ===")
+    try:
+        import analytics
+        analytics.log_mode_event("=== NETWORK RESTORED ===")
+    except:
+        pass
+
     while True:
         result = run("iptables -C FORWARD -i eno1 -o enp2s0 -j DROP 2>/dev/null && echo found")
         if "found" not in result:

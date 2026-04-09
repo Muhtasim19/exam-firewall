@@ -9,6 +9,9 @@ It works at the **network level**, so:
 - Works on Windows, macOS, and Linux
 - Students cannot bypass it by changing their DNS settings
 - Students cannot bypass it using IPv6
+- Students cannot bypass it using DNS over HTTPS (DoH)
+- Students cannot bypass it using QUIC/HTTP3
+- Apple iCloud Private Relay is disabled on the network
 - Controlled entirely from a **web dashboard**
 
 ---
@@ -29,6 +32,9 @@ This firewall enforces rules **before traffic reaches the internet**.
 - Automatically assigns IP addresses to student devices (DHCP)
 - Forces all DNS requests through the firewall (DNS hijacking)
 - Blocks IPv6 DNS responses to prevent bypass
+- Blocks DNS over HTTPS (DoH) bypass attempts
+- Blocks QUIC/HTTP3 (UDP 443) to prevent proxy extensions
+- Disables Apple iCloud Private Relay
 - Blocks selected websites using dnsmasq DNS filtering
 - Auto-resolves AI service IPs dynamically on exam start
 - Detects connected devices with IP, MAC, and hostname
@@ -74,6 +80,11 @@ Teacher/Admin accesses dashboard via:
 http://YOUR_WAN_IP
 ```
 
+Analytics dashboard via:
+```
+http://YOUR_WAN_IP:8080
+```
+
 SSH access:
 ```
 ssh admin_luniux@YOUR_WAN_IP
@@ -88,10 +99,12 @@ ssh admin_luniux@YOUR_WAN_IP
 - `isc-dhcp-server` — assigns IPs to student devices
 - `dnsmasq` — DNS filtering (blocks websites)
 - `netfilter-persistent` — saves firewall rules across reboots
+- `ethtool` — NIC ring buffer optimization
 - `Flask` — web dashboard backend
 - `Gunicorn` — production WSGI server (3 workers)
 - `Nginx` — reverse proxy (serves dashboard on port 80)
 - `nmap` — network scanning for device refresh
+- `SQLite` — analytics database
 - `Python 3` — firewall logic
 
 ---
@@ -110,10 +123,15 @@ exam-firewall/
 │
 ├── templates/
 │   ├── index.html                 ← Main dashboard
-│   └── login.html                 ← Admin login page
+│   ├── login.html                 ← Admin login page
+│   ├── analytics.html             ← Analytics dashboard
+│   ├── analytics_login.html       ← Analytics login page
+│   └── analytics_device.html     ← Device detail page
 │
 ├── app.py                         ← Flask web application
 ├── firewall.py                    ← Firewall & DNS logic
+├── analytics.py                   ← Analytics database logic
+├── analytics_app.py               ← Analytics Flask app
 ├── requirements.txt
 └── README.md
 ```
@@ -134,13 +152,10 @@ exam-firewall/
 
 > ℹ️ The server has no GUI — it's just a terminal. You control everything via SSH
 > or the web dashboard. This is normal and recommended for a firewall server.
-> If you want a desktop GUI, see the Optional section at the bottom.
 
 ---
 
 ### Step 2: Bring Up Network Interfaces
-After first boot, bring up both network interfaces:
-
 ```bash
 sudo ip link set eno1 up
 sudo ip link set enp2s0 up
@@ -151,8 +166,6 @@ Check they are up:
 ip a
 ```
 
-You should see both `eno1` and `enp2s0` listed.
-
 ---
 
 ### Step 3: Configure Network with Netplan
@@ -161,7 +174,7 @@ cd /etc/netplan
 sudo nano 01-netcfg.yaml
 ```
 
-Paste this config (replace interface names if different):
+Paste:
 ```yaml
 network:
   version: 2
@@ -180,20 +193,10 @@ sudo chmod 600 /etc/netplan/01-netcfg.yaml
 sudo netplan apply
 ```
 
-Verify:
-```bash
-ip a show eno1
-ip a show enp2s0
-```
-
-`eno1` should show `192.168.50.1` and `enp2s0` should have an IP from the school router.
-
 Note your WAN IP:
 ```bash
 ip a show enp2s0 | grep inet
 ```
-
-This is your `YOUR_WAN_IP` — write it down. You'll use it to access the dashboard.
 
 ---
 
@@ -225,6 +228,7 @@ sudo sysctl -p
 ### Step 6: Set Up NAT (Internet Sharing)
 ```bash
 sudo iptables -t nat -A POSTROUTING -o enp2s0 -j MASQUERADE
+sudo iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 sudo iptables -A FORWARD -i eno1 -o enp2s0 -j ACCEPT
 sudo iptables -A FORWARD -i enp2s0 -o eno1 -m state --state RELATED,ESTABLISHED -j ACCEPT
 ```
@@ -324,23 +328,39 @@ sudo systemctl restart dnsmasq
 
 ---
 
-### Step 9: Force All DNS Through Firewall
+### Step 9: Force All DNS Through Firewall and Block Bypasses
+
 ```bash
+# Redirect all DNS to firewall
 sudo iptables -t nat -A PREROUTING -i eno1 -p udp --dport 53 -j REDIRECT --to-ports 53
 sudo iptables -t nat -A PREROUTING -i eno1 -p tcp --dport 53 -j REDIRECT --to-ports 53
 ```
 
-Block external DNS servers:
+Block external DNS servers (use `-I` to insert at top):
 ```bash
-sudo iptables -A FORWARD -i eno1 -d 8.8.8.8 -j DROP
-sudo iptables -A FORWARD -i eno1 -d 1.1.1.1 -j DROP
-sudo iptables -A FORWARD -i eno1 -d 8.8.4.4 -j DROP
-sudo iptables -A FORWARD -i eno1 -d 9.9.9.9 -j DROP
+sudo iptables -I FORWARD 1 -i eno1 -d 8.8.8.8 -j DROP
+sudo iptables -I FORWARD 1 -i eno1 -d 8.8.4.4 -j DROP
+sudo iptables -I FORWARD 1 -i eno1 -d 1.1.1.1 -j DROP
+sudo iptables -I FORWARD 1 -i eno1 -d 1.0.0.1 -j DROP
+sudo iptables -I FORWARD 1 -i eno1 -d 9.9.9.9 -j DROP
+sudo iptables -I FORWARD 1 -i eno1 -d 208.67.222.222 -j DROP
+sudo iptables -I FORWARD 1 -i eno1 -d 208.67.220.220 -j DROP
+```
+
+Block QUIC/HTTP3 to prevent proxy extension bypass:
+```bash
+sudo iptables -I FORWARD 1 -i eno1 -p udp --dport 443 -j DROP
+```
+
+Allow DHCP traffic:
+```bash
+sudo iptables -I INPUT -i eno1 -p udp --dport 67 -j ACCEPT
+sudo iptables -I INPUT -i eno1 -p udp --dport 68 -j ACCEPT
 ```
 
 Block IPv6 forwarding:
 ```bash
-sudo ip6tables -A FORWARD -i eno1 -j DROP
+sudo ip6tables -I FORWARD 1 -i eno1 -j DROP
 ```
 
 ---
@@ -363,14 +383,59 @@ sudo netfilter-persistent save
 
 ---
 
-### Step 12: Install Required Tools
+### Step 12: Fix NIC Ring Buffer (Prevents DHCP Packet Loss)
+
+> ⚠️ This is critical! Some network cards drop DHCP packets under load due to
+> small hardware buffers. This fix prevents students from losing internet randomly.
+
+Check your NIC's buffer capacity:
 ```bash
-sudo apt install nmap git python3 python3-venv python3-pip -y
+sudo ethtool -g eno1
+```
+
+Increase the receive buffer:
+```bash
+sudo ethtool -G eno1 rx 4096
+```
+
+Make it permanent with a systemd service:
+```bash
+sudo nano /etc/systemd/system/optimize-eno1.service
+```
+
+Paste:
+```ini
+[Unit]
+Description=Increase RX Ring Buffer on eno1
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ethtool -G eno1 rx 4096
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable optimize-eno1.service
+sudo systemctl start optimize-eno1.service
 ```
 
 ---
 
-### Step 13: Clone the Project
+### Step 13: Install Required Tools
+```bash
+sudo apt install nmap git python3 python3-venv python3-pip arping -y
+```
+
+---
+
+### Step 14: Clone the Project
 ```bash
 cd ~
 git clone https://github.com/Muhtasim19/exam-firewall.git
@@ -379,7 +444,7 @@ cd exam-firewall/exam-firewall
 
 ---
 
-### Step 14: Set Up Python Environment
+### Step 15: Set Up Python Environment
 ```bash
 python3 -m venv venv
 source venv/bin/activate
@@ -389,7 +454,7 @@ pip install gunicorn
 
 ---
 
-### Step 15: Configure sudoers (Required for Dashboard)
+### Step 16: Configure sudoers (Required for Dashboard)
 ```bash
 sudo visudo
 ```
@@ -403,11 +468,12 @@ admin_luniux ALL=(ALL) NOPASSWD: /bin/cp
 admin_luniux ALL=(ALL) NOPASSWD: /bin/rm
 admin_luniux ALL=(ALL) NOPASSWD: /usr/bin/nmap
 admin_luniux ALL=(ALL) NOPASSWD: /usr/bin/conntrack
+admin_luniux ALL=(ALL) NOPASSWD: /usr/sbin/arping
 ```
 
 ---
 
-### Step 16: Set Up Nginx
+### Step 17: Set Up Nginx (Main Dashboard)
 ```bash
 sudo apt install nginx -y
 sudo nano /etc/nginx/sites-available/exam-dashboard
@@ -418,7 +484,6 @@ Paste:
 server {
     listen 80;
     server_name _;
-
     location / {
         proxy_pass http://127.0.0.1:5000;
         proxy_set_header Host $host;
@@ -427,7 +492,7 @@ server {
 }
 ```
 
-Enable the site:
+Enable:
 ```bash
 sudo ln -s /etc/nginx/sites-available/exam-dashboard /etc/nginx/sites-enabled/
 sudo rm /etc/nginx/sites-enabled/default
@@ -436,15 +501,45 @@ sudo systemctl restart nginx
 sudo systemctl enable nginx
 ```
 
-Open port 80:
+Open ports:
 ```bash
 sudo iptables -I INPUT -i enp2s0 -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT -i enp2s0 -p tcp --dport 8080 -j ACCEPT
 sudo netfilter-persistent save
 ```
 
 ---
 
-### Step 17: Set Up Systemd Service (Auto-start)
+### Step 18: Set Up Nginx (Analytics Dashboard)
+```bash
+sudo nano /etc/nginx/sites-available/exam-analytics
+```
+
+Paste:
+```nginx
+server {
+    listen 8080;
+    server_name _;
+    location / {
+        proxy_pass http://127.0.0.1:5001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+Enable:
+```bash
+sudo ln -s /etc/nginx/sites-available/exam-analytics /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+---
+
+### Step 19: Set Up Systemd Services (Auto-start)
+
+Main dashboard:
 ```bash
 sudo nano /etc/systemd/system/exam-dashboard.service
 ```
@@ -466,110 +561,88 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
-Enable and start:
+Analytics dashboard:
+```bash
+sudo nano /etc/systemd/system/exam-analytics.service
+```
+
+Paste:
+```ini
+[Unit]
+Description=Exam Firewall Analytics Dashboard
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/home/admin_luniux/exam-firewall/exam-firewall
+ExecStart=/home/admin_luniux/exam-firewall/exam-firewall/venv/bin/gunicorn --workers 1 --bind 127.0.0.1:5001 analytics_app:app
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable both:
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable exam-dashboard
-sudo systemctl start exam-dashboard
+sudo systemctl enable exam-dashboard exam-analytics
+sudo systemctl start exam-dashboard exam-analytics
 ```
 
 ---
 
-### Step 18: Set Up Cron Jobs
+### Step 20: Set Up Cron Jobs
 ```bash
 sudo crontab -e
 ```
 
-Add these two lines:
+Add these three lines:
 ```
-* * * * * ip neigh flush dev eno1 nud failed && ip neigh flush dev eno1 nud incomplete
+* * * * * ip neigh flush dev eno1 nud failed; ip neigh flush dev eno1 nud incomplete
+* * * * * for i in $(seq 100 200); do ping -c 1 -W 1 192.168.50.$i > /dev/null 2>&1 & done
 * * * * * cd /home/admin_luniux/exam-firewall/exam-firewall && /home/admin_luniux/exam-firewall/exam-firewall/venv/bin/python3 -c "import firewall; firewall.connected_devices()"
 ```
 
 ---
 
-### Step 19: Verify Everything is Running
+### Step 21: Verify Everything is Running
 ```bash
-sudo systemctl is-active exam-dashboard nginx dnsmasq isc-dhcp-server
+sudo systemctl is-active exam-dashboard exam-analytics nginx dnsmasq isc-dhcp-server optimize-eno1
 ```
 
-All four should show `active`.
+All should show `active`.
 
-Also verify the FORWARD chain:
+Verify FORWARD chain:
 ```bash
 sudo iptables -L FORWARD -n
 ```
 
-Should show `EXAM_BLOCK` as the first rule.
+Should show `EXAM_BLOCK` as first rule and DROP rules before ACCEPT rules.
 
 ---
 
 ## Optional: Install a Desktop GUI
 
-> ℹ️ This is **not recommended** for a firewall server. The server works best
-> headless (terminal only). The web dashboard at `http://YOUR_WAN_IP` is your GUI
-> for controlling everything. Only install this if you specifically need a desktop
-> on the server machine.
-
-### Install GNOME Desktop
+> ℹ️ Not recommended for a firewall server. Only install if you specifically need
+> a desktop on the server machine.
 
 ```bash
 sudo apt install ubuntu-desktop -y
-```
-
-This takes a while to download (2-3 GB). After it finishes:
-
-```bash
 sudo reboot
 ```
 
-After reboot you will see a graphical login screen with icons and a mouse.
-
-### Configure Network Interfaces via Desktop Terminal
-
-After logging into the desktop, open a terminal and bring up the interfaces:
-
-```bash
-sudo ip link set eno1 up
-sudo ip link set enp2s0 up
-```
-
-Then apply netplan:
-
-```bash
-cd /etc/netplan
-sudo nano 01-netcfg.yaml
-sudo chmod 600 /etc/netplan/01-netcfg.yaml
-sudo netplan apply
-```
-
-Verify interfaces are up:
-
-```bash
-ip a show eno1
-ip a show enp2s0
-```
-
-> ⚠️ Warnings when installing ubuntu-desktop:
-> - Uses 2-3 GB extra disk space
-> - Uses 500 MB+ extra RAM constantly
-> - May slow down the firewall server
-> - Not needed for normal operation
-> - All firewall features work the same with or without the desktop
+> ⚠️ Uses 2-3 GB extra disk, 500 MB+ extra RAM, may slow down the firewall.
 
 ---
 
 ## Daily Use (After Setup)
 
-### Access the Dashboard
-Teacher opens a browser and goes to:
+### Access the Dashboards
 ```
-http://YOUR_WAN_IP
+Main dashboard:      http://YOUR_WAN_IP
+Analytics dashboard: http://YOUR_WAN_IP:8080
 ```
-
-Login with your admin password.
-
----
 
 ### Monitor via SSH
 ```bash
@@ -579,10 +652,8 @@ ssh admin_luniux@YOUR_WAN_IP
 sudo tail -f /var/log/exam-firewall.log
 
 # Check all services
-sudo systemctl is-active exam-dashboard nginx dnsmasq isc-dhcp-server
+sudo systemctl is-active exam-dashboard exam-analytics nginx dnsmasq isc-dhcp-server
 ```
-
----
 
 ### Update Blocked Websites
 Edit `dns/blocked_domains.conf` on GitHub, then on the server:
@@ -592,15 +663,11 @@ git pull
 sudo systemctl reload dnsmasq
 ```
 
-Then toggle Exam Mode off and on from the dashboard to reload the new list.
-
----
-
 ### After Server Reboot
 ```bash
 cd ~/exam-firewall/exam-firewall
 git pull
-sudo systemctl restart exam-dashboard
+sudo systemctl restart exam-dashboard exam-analytics
 ```
 
 ---
@@ -617,8 +684,8 @@ Located in `dns/blocked_domains.conf`:
 | AI Coding | copilot.github.com, githubcopilot.com |
 | Games | chess.com |
 | Streaming | netflix.com, youtube.com |
-
-To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the server.
+| DoH Bypass | use-application-dns.net |
+| Apple Relay | mask.icloud.com, mask-h2.icloud.com |
 
 ---
 
@@ -632,39 +699,21 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 - 🔴 Enable / Disable Exam Mode (blocks AI sites, auto-resolves IPs)
 - 🔒 Enable / Disable Strict Mode (Classroom & Docs only)
 - 🔄 Auto-refreshes every 10 seconds with countdown timer
+- 📊 Separate analytics dashboard showing device history and events
 
 ---
 
-## How Device Blocking Works
-- Uses `iptables` to drop ALL traffic from a student's IP
-- Works through a custom chain called `EXAM_BLOCK`
-- Block/unblock is instant from the dashboard
-- Does not require exam mode to be active
+## Bypass Prevention Summary
 
----
-
-## How Exam Mode Works
-1. Copies `dns/blocked_domains.conf` → `/etc/dnsmasq.d/exam-block.conf`
-2. Reloads dnsmasq — blocked domains resolve to `0.0.0.0`
-3. Auto-resolves current IPs for ChatGPT and Gemini using `dig`
-4. Adds direct IP DROP rules for those ranges
-5. On disable — removes all IP blocks and DNS block file
-
----
-
-## How Strict Mode Works
-1. Enables DNS blocking (same as exam mode)
-2. Whitelists Google Classroom, Docs, and Accounts IPs
-3. Drops ALL other student internet traffic using iptables comment marker `strict-mode`
-4. On disable — removes all strict rules and DNS blocks
-
----
-
-## How DNS Blocking Works
-1. dnsmasq resolves blocked domains to `0.0.0.0` (unreachable)
-2. All student DNS requests are forced through the firewall
-3. `filter-AAAA` blocks IPv6 DNS — students cannot bypass using IPv6
-4. Students cannot use Google DNS or Cloudflare DNS
+| Bypass Method | How We Block It |
+|---------------|----------------|
+| Change DNS settings | Force all port 53 to our server |
+| Use Google/Cloudflare DNS | Block 8.8.8.8, 1.1.1.1, etc. via iptables |
+| DNS over HTTPS (DoH) | Block UDP 443 + null-route DoH domains |
+| IPv6 DNS | `filter-AAAA` in dnsmasq + ip6tables DROP |
+| Apple iCloud Private Relay | Null-route mask.icloud.com domains |
+| QUIC/HTTP3 proxy extensions | Block UDP port 443 |
+| OpenDNS | Block 208.67.222.222 and 208.67.220.220 |
 
 ---
 
@@ -674,9 +723,11 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 |-----|---------|
 | Live device log | `sudo tail -f /var/log/exam-firewall.log` |
 | Dashboard logs | `sudo journalctl -u exam-dashboard -n 50 --no-pager` |
+| Analytics logs | `sudo journalctl -u exam-analytics -n 50 --no-pager` |
 | Nginx error log | `sudo tail -f /var/log/nginx/error.log` |
 | dnsmasq log | `sudo journalctl -u dnsmasq -n 50 --no-pager` |
 | DHCP log | `sudo journalctl -u isc-dhcp-server -n 50 --no-pager` |
+| NIC buffer stats | `ip -s link show eno1` |
 | All live logs | `sudo journalctl -f` |
 
 ---
@@ -685,7 +736,7 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 
 | Problem | Fix |
 |---------|-----|
-| Dashboard asks for Linux password | Add sudoers entries (Step 15) |
+| Dashboard asks for Linux password | Add sudoers entries (Step 16) |
 | Websites not blocked | Check `/etc/dnsmasq.conf` has `conf-dir=/etc/dnsmasq.d/,*.conf` |
 | Sites blocked but IPv6 still works | Check `filter-AAAA` is in `/etc/dnsmasq.conf` |
 | Hostnames show as Unknown | Check `isc-dhcp-server`: `sudo systemctl status isc-dhcp-server` |
@@ -700,6 +751,8 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 | Internet drops on exam mode | dnsmasq uses `reload` not `restart` — check firewall.py |
 | Network interface not up | Run `sudo ip link set eno1 up` and `sudo ip link set enp2s0 up` |
 | No IP on WAN interface | Check netplan config: `sudo cat /etc/netplan/01-netcfg.yaml` |
+| Devices randomly lose internet | Check NIC buffer: `ip -s link show eno1` — missed packets growing? Run Step 12 |
+| DHCP packets dropped | Run `sudo systemctl status optimize-eno1` — NIC buffer fix applied? |
 
 ---
 
@@ -709,9 +762,15 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 ✅ DNS filtering working  
 ✅ DNS hijacking (students cannot bypass)  
 ✅ IPv6 bypass blocked  
+✅ DNS over HTTPS (DoH) bypass blocked  
+✅ QUIC/HTTP3 proxy bypass blocked  
+✅ Apple iCloud Private Relay disabled  
+✅ OpenDNS blocked  
+✅ NIC ring buffer optimized (prevents DHCP packet loss)  
 ✅ Flask dashboard with login  
 ✅ Nginx + Gunicorn production setup  
 ✅ Teacher access via `http://YOUR_WAN_IP`  
+✅ Analytics dashboard via `http://YOUR_WAN_IP:8080`  
 ✅ Device detection with hostname  
 ✅ Individual device blocking/unblocking  
 ✅ Kill switch / Restore all internet  
@@ -720,6 +779,7 @@ To add more sites, edit `dns/blocked_domains.conf` on GitHub and pull on the ser
 ✅ Manual device refresh with nmap  
 ✅ Auto-refresh with countdown timer  
 ✅ Live device logging to `/var/log/exam-firewall.log`  
+✅ SQLite analytics database  
 ✅ Cron jobs for ARP flush and device logging  
 ✅ Auto-start on reboot  
 ✅ Server never sleeps  

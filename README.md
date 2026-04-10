@@ -56,6 +56,10 @@ This firewall enforces rules **before traffic reaches the internet**.
   - **WAN** (`enp2s0`): connected to the internet router
   - **LAN** (`eno1`): connected to student devices via switch
 
+> ⚠️ **NIC Quality Matters**: Cheap or old network cards may drop DHCP packets
+> under load due to small hardware buffers. See Step 12 for the fix. If problems
+> persist, replace the LAN network card with a quality Intel or Realtek card.
+
 ---
 
 ## Network Layout
@@ -125,7 +129,7 @@ exam-firewall/
 │   ├── index.html                 ← Main dashboard
 │   ├── login.html                 ← Admin login page
 │   ├── analytics.html             ← Analytics dashboard
-│   ├── analytics_login.html       ← Analytics login page
+│   ├── analytics_login.html       ← Analytics login
 │   └── analytics_device.html     ← Device detail page
 │
 ├── app.py                         ← Flask web application
@@ -159,10 +163,6 @@ exam-firewall/
 ```bash
 sudo ip link set eno1 up
 sudo ip link set enp2s0 up
-```
-
-Check they are up:
-```bash
 ip a
 ```
 
@@ -200,14 +200,58 @@ ip a show enp2s0 | grep inet
 
 ---
 
-### Step 4: Update System
+### Step 4: Fix Hostname Resolution
+Ubuntu 24.04 sometimes can't resolve its own hostname. Fix it now to avoid issues later:
+
+```bash
+sudo nano /etc/hosts
+```
+
+Make sure the first line includes your hostname:
+```
+127.0.0.1 localhost node1
+```
+
+Save and exit.
+
+---
+
+### Step 5: Disable systemd-resolved (Critical for dnsmasq)
+
+> ⚠️ **This is the most important step!** Ubuntu 24.04 runs `systemd-resolved`
+> which holds port 53 and **prevents dnsmasq from starting**. You must disable
+> its stub listener before installing dnsmasq.
+
+```bash
+sudo nano /etc/systemd/resolved.conf
+```
+
+Find `#DNSStubListener=yes` and change it to:
+```
+DNSStubListener=no
+```
+
+Save, then apply:
+```bash
+sudo systemctl restart systemd-resolved
+```
+
+Fix the DNS resolver symlink:
+```bash
+sudo rm /etc/resolv.conf
+sudo ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+```
+
+---
+
+### Step 6: Update System
 ```bash
 sudo apt update && sudo apt upgrade -y
 ```
 
 ---
 
-### Step 5: Enable IP Forwarding
+### Step 7: Enable IP Forwarding
 ```bash
 sudo nano /etc/sysctl.conf
 ```
@@ -225,17 +269,14 @@ sudo sysctl -p
 
 ---
 
-### Step 6: Set Up NAT (Internet Sharing)
+### Step 8: Set Up NAT (Internet Sharing)
 ```bash
 sudo iptables -t nat -A POSTROUTING -o enp2s0 -j MASQUERADE
-sudo iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
-sudo iptables -A FORWARD -i eno1 -o enp2s0 -j ACCEPT
-sudo iptables -A FORWARD -i enp2s0 -o eno1 -m state --state RELATED,ESTABLISHED -j ACCEPT
 ```
 
 ---
 
-### Step 7: Install isc-dhcp-server
+### Step 9: Install isc-dhcp-server
 ```bash
 sudo apt install isc-dhcp-server -y
 ```
@@ -255,7 +296,7 @@ Configure DHCP leases:
 sudo nano /etc/dhcp/dhcpd.conf
 ```
 
-Replace entire file with:
+Replace **entire file** with exactly this:
 ```
 authoritative;
 
@@ -272,18 +313,18 @@ subnet 192.168.50.0 netmask 255.255.255.0 {
 }
 ```
 
+> ⚠️ Do not add any extra lines or DNS servers — this exact format is required.
+> `authoritative` is required so managed Windows devices accept the DHCP offer.
+
 Start and enable:
 ```bash
 sudo systemctl enable isc-dhcp-server
 sudo systemctl start isc-dhcp-server
 ```
 
-> ⚠️ `authoritative` is required so managed Windows devices accept the DHCP offer.
-> ⚠️ 86400 second (24 hour) leases prevent frequent reconnection issues.
-
 ---
 
-### Step 8: Install and Configure dnsmasq
+### Step 10: Install and Configure dnsmasq
 ```bash
 sudo apt install dnsmasq -y
 ```
@@ -317,88 +358,88 @@ After=network-online.target
 Wants=network-online.target
 ```
 
-Restart dnsmasq:
+Start dnsmasq:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable dnsmasq
 sudo systemctl restart dnsmasq
+sudo systemctl status dnsmasq
 ```
 
-> ⚠️ `filter-AAAA` blocks IPv6 DNS responses so students cannot bypass DNS blocking using IPv6.
+Should show `active (running)`. If it fails run:
+```bash
+sudo dnsmasq --test
+sudo ss -tulpn | grep :53
+```
+
+> ⚠️ `filter-AAAA` blocks IPv6 DNS responses — students cannot bypass using IPv6.
 
 ---
 
-### Step 9: Force All DNS Through Firewall and Block Bypasses
+### Step 11: Build the Firewall Rules (Correct Order)
 
+> ⚠️ **Order matters!** Rules must be added in this exact sequence.
+
+DNS redirect:
 ```bash
-# Redirect all DNS to firewall
 sudo iptables -t nat -A PREROUTING -i eno1 -p udp --dport 53 -j REDIRECT --to-ports 53
 sudo iptables -t nat -A PREROUTING -i eno1 -p tcp --dport 53 -j REDIRECT --to-ports 53
 ```
 
-Block external DNS servers (use `-I` to insert at top):
+Build FORWARD chain in correct order:
 ```bash
-sudo iptables -I FORWARD 1 -i eno1 -d 8.8.8.8 -j DROP
-sudo iptables -I FORWARD 1 -i eno1 -d 8.8.4.4 -j DROP
-sudo iptables -I FORWARD 1 -i eno1 -d 1.1.1.1 -j DROP
-sudo iptables -I FORWARD 1 -i eno1 -d 1.0.0.1 -j DROP
-sudo iptables -I FORWARD 1 -i eno1 -d 9.9.9.9 -j DROP
-sudo iptables -I FORWARD 1 -i eno1 -d 208.67.222.222 -j DROP
-sudo iptables -I FORWARD 1 -i eno1 -d 208.67.220.220 -j DROP
+# 1. Dashboard control chain first
+sudo iptables -A FORWARD -j EXAM_BLOCK
+
+# 2. Allow established connections
+sudo iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+# 3. Block external DNS servers
+sudo iptables -A FORWARD -i eno1 -d 8.8.8.8 -j DROP
+sudo iptables -A FORWARD -i eno1 -d 8.8.4.4 -j DROP
+sudo iptables -A FORWARD -i eno1 -d 1.1.1.1 -j DROP
+sudo iptables -A FORWARD -i eno1 -d 1.0.0.1 -j DROP
+sudo iptables -A FORWARD -i eno1 -d 9.9.9.9 -j DROP
+sudo iptables -A FORWARD -i eno1 -d 208.67.222.222 -j DROP
+sudo iptables -A FORWARD -i eno1 -d 208.67.220.220 -j DROP
+
+# 4. Block QUIC/HTTP3 proxy bypass
+sudo iptables -A FORWARD -i eno1 -p udp --dport 443 -j DROP
+
+# 5. Allow normal internet traffic
+sudo iptables -A FORWARD -i eno1 -o enp2s0 -j ACCEPT
+sudo iptables -A FORWARD -i enp2s0 -o eno1 -m state --state RELATED,ESTABLISHED -j ACCEPT
 ```
 
-Block QUIC/HTTP3 to prevent proxy extension bypass:
-```bash
-sudo iptables -I FORWARD 1 -i eno1 -p udp --dport 443 -j DROP
-```
-
-Allow DHCP traffic:
+Allow DHCP:
 ```bash
 sudo iptables -I INPUT -i eno1 -p udp --dport 67 -j ACCEPT
 sudo iptables -I INPUT -i eno1 -p udp --dport 68 -j ACCEPT
 ```
 
-Block IPv6 forwarding:
+Block IPv6:
 ```bash
-sudo ip6tables -I FORWARD 1 -i eno1 -j DROP
-```
-
----
-
-### Step 10: Disable Server Sleep
-```bash
-sudo systemctl mask sleep.target
-sudo systemctl mask suspend.target
-sudo systemctl mask hibernate.target
-sudo systemctl mask hybrid-sleep.target
-```
-
----
-
-### Step 11: Save Firewall Rules
-```bash
-sudo apt install netfilter-persistent -y
-sudo netfilter-persistent save
+sudo ip6tables -A FORWARD -i eno1 -j DROP
 ```
 
 ---
 
 ### Step 12: Fix NIC Ring Buffer (Prevents DHCP Packet Loss)
 
-> ⚠️ This is critical! Some network cards drop DHCP packets under load due to
-> small hardware buffers. This fix prevents students from losing internet randomly.
+> ⚠️ **Critical for stability!** Some NICs drop DHCP packets under load.
+> This fix prevents students randomly losing internet.
 
-Check your NIC's buffer capacity:
+Check buffer capacity:
 ```bash
 sudo ethtool -g eno1
 ```
 
-Increase the receive buffer:
+Increase receive buffer to maximum:
 ```bash
 sudo ethtool -G eno1 rx 4096
 ```
 
-Make it permanent with a systemd service:
+Make permanent:
 ```bash
 sudo nano /etc/systemd/system/optimize-eno1.service
 ```
@@ -426,16 +467,44 @@ sudo systemctl enable optimize-eno1.service
 sudo systemctl start optimize-eno1.service
 ```
 
+Monitor for missed packets:
+```bash
+watch -n 2 ip -s link show eno1
+```
+
+The `missed` counter should stay at 0.
+
+> ⚠️ If missed packets keep climbing even with rx 4096, the NIC hardware is
+> failing. Replace the LAN network card.
+
 ---
 
-### Step 13: Install Required Tools
+### Step 13: Disable Server Sleep
+```bash
+sudo systemctl mask sleep.target
+sudo systemctl mask suspend.target
+sudo systemctl mask hibernate.target
+sudo systemctl mask hybrid-sleep.target
+```
+
+---
+
+### Step 14: Save Firewall Rules
+```bash
+sudo apt install netfilter-persistent -y
+sudo netfilter-persistent save
+```
+
+---
+
+### Step 15: Install Required Tools
 ```bash
 sudo apt install nmap git python3 python3-venv python3-pip arping -y
 ```
 
 ---
 
-### Step 14: Clone the Project
+### Step 16: Clone the Project
 ```bash
 cd ~
 git clone https://github.com/Muhtasim19/exam-firewall.git
@@ -444,7 +513,7 @@ cd exam-firewall/exam-firewall
 
 ---
 
-### Step 15: Set Up Python Environment
+### Step 17: Set Up Python Environment
 ```bash
 python3 -m venv venv
 source venv/bin/activate
@@ -454,7 +523,7 @@ pip install gunicorn
 
 ---
 
-### Step 16: Configure sudoers (Required for Dashboard)
+### Step 18: Configure sudoers (Required for Dashboard)
 ```bash
 sudo visudo
 ```
@@ -473,7 +542,7 @@ admin_luniux ALL=(ALL) NOPASSWD: /usr/sbin/arping
 
 ---
 
-### Step 17: Set Up Nginx (Main Dashboard)
+### Step 19: Set Up Nginx (Main Dashboard)
 ```bash
 sudo apt install nginx -y
 sudo nano /etc/nginx/sites-available/exam-dashboard
@@ -492,7 +561,6 @@ server {
 }
 ```
 
-Enable:
 ```bash
 sudo ln -s /etc/nginx/sites-available/exam-dashboard /etc/nginx/sites-enabled/
 sudo rm /etc/nginx/sites-enabled/default
@@ -501,16 +569,9 @@ sudo systemctl restart nginx
 sudo systemctl enable nginx
 ```
 
-Open ports:
-```bash
-sudo iptables -I INPUT -i enp2s0 -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT -i enp2s0 -p tcp --dport 8080 -j ACCEPT
-sudo netfilter-persistent save
-```
-
 ---
 
-### Step 18: Set Up Nginx (Analytics Dashboard)
+### Step 20: Set Up Nginx (Analytics Dashboard)
 ```bash
 sudo nano /etc/nginx/sites-available/exam-analytics
 ```
@@ -528,17 +589,22 @@ server {
 }
 ```
 
-Enable:
 ```bash
 sudo ln -s /etc/nginx/sites-available/exam-analytics /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl restart nginx
 ```
 
+Open ports:
+```bash
+sudo iptables -I INPUT -i enp2s0 -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT -i enp2s0 -p tcp --dport 8080 -j ACCEPT
+sudo netfilter-persistent save
+```
+
 ---
 
-### Step 19: Set Up Systemd Services (Auto-start)
-
+### Step 21: Set Up Systemd Services
 Main dashboard:
 ```bash
 sudo nano /etc/systemd/system/exam-dashboard.service
@@ -592,7 +658,7 @@ sudo systemctl start exam-dashboard exam-analytics
 
 ---
 
-### Step 20: Set Up Cron Jobs
+### Step 22: Set Up Cron Jobs
 ```bash
 sudo crontab -e
 ```
@@ -606,26 +672,33 @@ Add these three lines:
 
 ---
 
-### Step 21: Verify Everything is Running
+### Step 23: Verify Everything is Running
 ```bash
 sudo systemctl is-active exam-dashboard exam-analytics nginx dnsmasq isc-dhcp-server optimize-eno1
 ```
 
 All should show `active`.
 
-Verify FORWARD chain:
+Verify firewall chain order:
 ```bash
-sudo iptables -L FORWARD -n
+sudo iptables-save -c
 ```
 
-Should show `EXAM_BLOCK` as first rule and DROP rules before ACCEPT rules.
+FORWARD chain should be in this exact order:
+```
+1. EXAM_BLOCK
+2. RELATED,ESTABLISHED ACCEPT
+3. DROP external DNS servers
+4. DROP UDP 443 (QUIC)
+5. ACCEPT eno1 → enp2s0
+6. ACCEPT enp2s0 → eno1 (established)
+```
 
 ---
 
 ## Optional: Install a Desktop GUI
 
-> ℹ️ Not recommended for a firewall server. Only install if you specifically need
-> a desktop on the server machine.
+> ℹ️ Not recommended. Only install if you specifically need a desktop.
 
 ```bash
 sudo apt install ubuntu-desktop -y
@@ -647,16 +720,11 @@ Analytics dashboard: http://YOUR_WAN_IP:8080
 ### Monitor via SSH
 ```bash
 ssh admin_luniux@YOUR_WAN_IP
-
-# Watch live device log
 sudo tail -f /var/log/exam-firewall.log
-
-# Check all services
 sudo systemctl is-active exam-dashboard exam-analytics nginx dnsmasq isc-dhcp-server
 ```
 
 ### Update Blocked Websites
-Edit `dns/blocked_domains.conf` on GitHub, then on the server:
 ```bash
 cd ~/exam-firewall/exam-firewall
 git pull
@@ -682,7 +750,7 @@ Located in `dns/blocked_domains.conf`:
 | AI Video | runwayml.com, pika.art, synthesia.io |
 | AI Audio | elevenlabs.io, suno.ai |
 | AI Coding | copilot.github.com, githubcopilot.com |
-| Games | chess.com |
+| Games | chess.com, lichess.org |
 | Streaming | netflix.com, youtube.com |
 | DoH Bypass | use-application-dns.net |
 | Apple Relay | mask.icloud.com, mask-h2.icloud.com |
@@ -699,7 +767,7 @@ Located in `dns/blocked_domains.conf`:
 - 🔴 Enable / Disable Exam Mode (blocks AI sites, auto-resolves IPs)
 - 🔒 Enable / Disable Strict Mode (Classroom & Docs only)
 - 🔄 Auto-refreshes every 10 seconds with countdown timer
-- 📊 Separate analytics dashboard showing device history and events
+- 📊 Separate analytics dashboard at port 8080
 
 ---
 
@@ -708,7 +776,7 @@ Located in `dns/blocked_domains.conf`:
 | Bypass Method | How We Block It |
 |---------------|----------------|
 | Change DNS settings | Force all port 53 to our server |
-| Use Google/Cloudflare DNS | Block 8.8.8.8, 1.1.1.1, etc. via iptables |
+| Use Google/Cloudflare DNS | Block 8.8.8.8, 1.1.1.1 etc. via iptables |
 | DNS over HTTPS (DoH) | Block UDP 443 + null-route DoH domains |
 | IPv6 DNS | `filter-AAAA` in dnsmasq + ip6tables DROP |
 | Apple iCloud Private Relay | Null-route mask.icloud.com domains |
@@ -723,11 +791,10 @@ Located in `dns/blocked_domains.conf`:
 |-----|---------|
 | Live device log | `sudo tail -f /var/log/exam-firewall.log` |
 | Dashboard logs | `sudo journalctl -u exam-dashboard -n 50 --no-pager` |
-| Analytics logs | `sudo journalctl -u exam-analytics -n 50 --no-pager` |
 | Nginx error log | `sudo tail -f /var/log/nginx/error.log` |
 | dnsmasq log | `sudo journalctl -u dnsmasq -n 50 --no-pager` |
 | DHCP log | `sudo journalctl -u isc-dhcp-server -n 50 --no-pager` |
-| NIC buffer stats | `ip -s link show eno1` |
+| NIC hardware stats | `ip -s link show eno1` |
 | All live logs | `sudo journalctl -f` |
 
 ---
@@ -736,23 +803,24 @@ Located in `dns/blocked_domains.conf`:
 
 | Problem | Fix |
 |---------|-----|
-| Dashboard asks for Linux password | Add sudoers entries (Step 16) |
+| dnsmasq fails to start | Run `sudo ss -tulpn \| grep :53` — disable `systemd-resolved` (Step 5) |
+| `sudo` hostname error | Add hostname to `/etc/hosts`: `127.0.0.1 localhost node1` |
+| Dashboard asks for Linux password | Add sudoers entries (Step 18) |
 | Websites not blocked | Check `/etc/dnsmasq.conf` has `conf-dir=/etc/dnsmasq.d/,*.conf` |
 | Sites blocked but IPv6 still works | Check `filter-AAAA` is in `/etc/dnsmasq.conf` |
 | Hostnames show as Unknown | Check `isc-dhcp-server`: `sudo systemctl status isc-dhcp-server` |
 | Dashboard not starting | Check service: `sudo systemctl status exam-dashboard` |
 | Teacher cannot access dashboard | Check Nginx: `sudo systemctl status nginx` |
 | Kill switch won't restore | Run `sudo iptables -D FORWARD -i eno1 -o enp2s0 -j DROP` until bad rule |
-| dnsmasq fails on boot | Check override: `sudo systemctl cat dnsmasq` |
 | Devices disappear from dashboard | Click Refresh Devices or wait for auto-refresh |
 | Server goes to sleep | Run `sudo systemctl mask sleep.target suspend.target` |
 | Student device gets 169.254.x.x | Run `ipconfig /release` then `ipconfig /renew` on device |
 | DHCP not giving IPs | Check `authoritative` is in `/etc/dhcp/dhcpd.conf` |
 | Internet drops on exam mode | dnsmasq uses `reload` not `restart` — check firewall.py |
-| Network interface not up | Run `sudo ip link set eno1 up` and `sudo ip link set enp2s0 up` |
-| No IP on WAN interface | Check netplan config: `sudo cat /etc/netplan/01-netcfg.yaml` |
-| Devices randomly lose internet | Check NIC buffer: `ip -s link show eno1` — missed packets growing? Run Step 12 |
-| DHCP packets dropped | Run `sudo systemctl status optimize-eno1` — NIC buffer fix applied? |
+| Devices randomly lose internet | Check NIC: `ip -s link show eno1` — missed packets growing? |
+| DHCP packets dropped by NIC | Run `sudo systemctl status optimize-eno1` — check Step 12 |
+| Missed packets keep climbing | NIC hardware is failing — replace the network card |
+| FORWARD chain wrong order | Run `sudo iptables-save -c` and verify EXAM_BLOCK is first |
 
 ---
 
@@ -766,7 +834,10 @@ Located in `dns/blocked_domains.conf`:
 ✅ QUIC/HTTP3 proxy bypass blocked  
 ✅ Apple iCloud Private Relay disabled  
 ✅ OpenDNS blocked  
+✅ systemd-resolved disabled (no port 53 conflict)  
 ✅ NIC ring buffer optimized (prevents DHCP packet loss)  
+✅ iptables FORWARD chain correct order  
+✅ EXAM_BLOCK chain connected  
 ✅ Flask dashboard with login  
 ✅ Nginx + Gunicorn production setup  
 ✅ Teacher access via `http://YOUR_WAN_IP`  
@@ -778,7 +849,7 @@ Located in `dns/blocked_domains.conf`:
 ✅ Strict mode (Classroom & Docs only)  
 ✅ Manual device refresh with nmap  
 ✅ Auto-refresh with countdown timer  
-✅ Live device logging to `/var/log/exam-firewall.log`  
+✅ Live device logging  
 ✅ SQLite analytics database  
 ✅ Cron jobs for ARP flush and device logging  
 ✅ Auto-start on reboot  

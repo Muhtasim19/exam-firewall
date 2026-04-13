@@ -60,6 +60,10 @@ This firewall enforces rules **before traffic reaches the internet**.
 > under load due to small hardware buffers. See Step 12 for the fix. If problems
 > persist, replace the LAN network card with a quality Intel or Realtek card.
 
+> ℹ️ **If you add a new NIC or move a card to a different PCI slot**, the interface
+> name will change. Use a udev rule (Step 3b) to force a consistent name regardless
+> of which slot the card is in.
+
 ---
 
 ## Network Layout
@@ -104,6 +108,7 @@ ssh admin_luniux@YOUR_WAN_IP
 - `dnsmasq` — DNS filtering (blocks websites)
 - `netfilter-persistent` — saves firewall rules across reboots
 - `ethtool` — NIC ring buffer optimization
+- `udev` — network interface naming rules
 - `Flask` — web dashboard backend
 - `Gunicorn` — production WSGI server (3 workers)
 - `Nginx` — reverse proxy (serves dashboard on port 80)
@@ -200,9 +205,46 @@ ip a show enp2s0 | grep inet
 
 ---
 
-### Step 4: Fix Hostname Resolution
-Ubuntu 24.04 sometimes can't resolve its own hostname. Fix it now to avoid issues later:
+### Step 3b: Force Consistent Interface Names (udev Rule)
 
+> ℹ️ **Do this if you added a new NIC or moved a card to a different PCI slot.**
+> Without this, Linux may rename your interfaces after a hardware change, breaking
+> the entire firewall config.
+
+Find the MAC address of each card:
+```bash
+ip a | grep -E "^[0-9]|link/ether"
+```
+
+Create a udev rule:
+```bash
+sudo nano /etc/udev/rules.d/10-network.rules
+```
+
+Paste (replace MAC addresses with your actual ones):
+```
+SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="YOUR_WAN_CARD_MAC", NAME="enp2s0"
+```
+
+> ℹ️ You only need a rule for the WAN card (`enp2s0`). The built-in Intel card
+> (`eno1`) keeps its name automatically since it's soldered to the motherboard.
+
+Apply:
+```bash
+sudo udevadm control --reload-rules
+sudo reboot
+```
+
+After reboot verify:
+```bash
+ip a
+```
+
+Both `eno1` and `enp2s0` should appear with correct IPs.
+
+---
+
+### Step 4: Fix Hostname Resolution
 ```bash
 sudo nano /etc/hosts
 ```
@@ -211,8 +253,6 @@ Make sure the first line includes your hostname:
 ```
 127.0.0.1 localhost node1
 ```
-
-Save and exit.
 
 ---
 
@@ -298,6 +338,8 @@ sudo nano /etc/dhcp/dhcpd.conf
 
 Replace **entire file** with exactly this:
 ```
+log-facility local7;
+
 authoritative;
 
 default-lease-time 86400;
@@ -313,14 +355,28 @@ subnet 192.168.50.0 netmask 255.255.255.0 {
 }
 ```
 
-> ⚠️ Do not add any extra lines or DNS servers — this exact format is required.
-> `authoritative` is required so managed Windows devices accept the DHCP offer.
+Configure DHCP logging:
+```bash
+sudo nano /etc/rsyslog.d/dhcp.conf
+```
 
-Start and enable:
+Paste:
+```
+local7.*    /var/log/dhcp.log
+```
+
+```bash
+sudo systemctl restart rsyslog
+```
+
+Start and enable DHCP:
 ```bash
 sudo systemctl enable isc-dhcp-server
 sudo systemctl start isc-dhcp-server
 ```
+
+> ⚠️ Do not add any extra lines to dhcpd.conf — this exact format is required.
+> `authoritative` is required so managed Windows devices accept the DHCP offer.
 
 ---
 
@@ -345,7 +401,7 @@ conf-dir=/etc/dnsmasq.d/,*.conf
 filter-AAAA
 ```
 
-Create dnsmasq override to wait for network on boot:
+Create dnsmasq override to wait for network and eno1 on boot:
 ```bash
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d/
 sudo nano /etc/systemd/system/dnsmasq.service.d/override.conf
@@ -354,9 +410,12 @@ sudo nano /etc/systemd/system/dnsmasq.service.d/override.conf
 Paste:
 ```ini
 [Unit]
-After=network-online.target
-Wants=network-online.target
+After=network-online.target sys-subsystem-net-devices-eno1.device
+Wants=network-online.target sys-subsystem-net-devices-eno1.device
 ```
+
+> ⚠️ This stronger override ensures dnsmasq waits for `eno1` to get its IP before
+> starting. Without this, dnsmasq may fail on boot after a BIOS update or reboot.
 
 Start dnsmasq:
 ```bash
@@ -429,31 +488,33 @@ sudo ip6tables -A FORWARD -i eno1 -j DROP
 > ⚠️ **Critical for stability!** Some NICs drop DHCP packets under load.
 > This fix prevents students randomly losing internet.
 
-Check buffer capacity:
+Check buffer capacity on both cards:
 ```bash
 sudo ethtool -g eno1
+sudo ethtool -g enp2s0
 ```
 
-Increase receive buffer to maximum:
+Look at **Pre-set maximums RX** for each card and set to the maximum:
 ```bash
-sudo ethtool -G eno1 rx 4096
+sudo ethtool -G eno1 rx 4096    # use Pre-set maximum shown above
+sudo ethtool -G enp2s0 rx 256   # use Pre-set maximum shown above
 ```
 
-Make permanent:
+Make permanent with a systemd service:
 ```bash
 sudo nano /etc/systemd/system/optimize-eno1.service
 ```
 
-Paste:
+Paste (adjust rx values to match your card's Pre-set maximums):
 ```ini
 [Unit]
-Description=Increase RX Ring Buffer on eno1
+Description=Increase RX Ring Buffer on NICs
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/sbin/ethtool -G eno1 rx 4096
+ExecStart=/bin/bash -c '/sbin/ethtool -G eno1 rx 4096; /sbin/ethtool -G enp2s0 rx 256'
 RemainAfterExit=yes
 
 [Install]
@@ -474,8 +535,8 @@ watch -n 2 ip -s link show eno1
 
 The `missed` counter should stay at 0.
 
-> ⚠️ If missed packets keep climbing even with rx 4096, the NIC hardware is
-> failing. Replace the LAN network card.
+> ⚠️ If missed packets keep climbing even at maximum rx, the NIC hardware is
+> failing. Replace the network card.
 
 ---
 
@@ -790,10 +851,11 @@ Located in `dns/blocked_domains.conf`:
 | Log | Command |
 |-----|---------|
 | Live device log | `sudo tail -f /var/log/exam-firewall.log` |
+| DHCP log | `sudo tail -f /var/log/dhcp.log` |
 | Dashboard logs | `sudo journalctl -u exam-dashboard -n 50 --no-pager` |
+| Analytics logs | `sudo journalctl -u exam-analytics -n 50 --no-pager` |
 | Nginx error log | `sudo tail -f /var/log/nginx/error.log` |
 | dnsmasq log | `sudo journalctl -u dnsmasq -n 50 --no-pager` |
-| DHCP log | `sudo journalctl -u isc-dhcp-server -n 50 --no-pager` |
 | NIC hardware stats | `ip -s link show eno1` |
 | All live logs | `sudo journalctl -f` |
 
@@ -804,6 +866,9 @@ Located in `dns/blocked_domains.conf`:
 | Problem | Fix |
 |---------|-----|
 | dnsmasq fails to start | Run `sudo ss -tulpn \| grep :53` — disable `systemd-resolved` (Step 5) |
+| dnsmasq fails after reboot | Check override.conf has `sys-subsystem-net-devices-eno1.device` (Step 10) |
+| Interface name changed after NIC swap | Create udev rule (Step 3b) to force consistent name |
+| No internet after NIC swap | Update Netplan and NAT rule to use new interface name |
 | `sudo` hostname error | Add hostname to `/etc/hosts`: `127.0.0.1 localhost node1` |
 | Dashboard asks for Linux password | Add sudoers entries (Step 18) |
 | Websites not blocked | Check `/etc/dnsmasq.conf` has `conf-dir=/etc/dnsmasq.d/,*.conf` |
@@ -815,6 +880,7 @@ Located in `dns/blocked_domains.conf`:
 | Devices disappear from dashboard | Click Refresh Devices or wait for auto-refresh |
 | Server goes to sleep | Run `sudo systemctl mask sleep.target suspend.target` |
 | Student device gets 169.254.x.x | Run `ipconfig /release` then `ipconfig /renew` on device |
+| DHCP crashes with extra lines | Clean dhcpd.conf — only keep the exact format from Step 9 |
 | DHCP not giving IPs | Check `authoritative` is in `/etc/dhcp/dhcpd.conf` |
 | Internet drops on exam mode | dnsmasq uses `reload` not `restart` — check firewall.py |
 | Devices randomly lose internet | Check NIC: `ip -s link show eno1` — missed packets growing? |
@@ -827,6 +893,7 @@ Located in `dns/blocked_domains.conf`:
 ## Project Status
 ✅ Firewall routing and NAT working  
 ✅ DHCP assigning IPs to students (24 hour leases)  
+✅ DHCP logging to `/var/log/dhcp.log`  
 ✅ DNS filtering working  
 ✅ DNS hijacking (students cannot bypass)  
 ✅ IPv6 bypass blocked  
@@ -835,7 +902,9 @@ Located in `dns/blocked_domains.conf`:
 ✅ Apple iCloud Private Relay disabled  
 ✅ OpenDNS blocked  
 ✅ systemd-resolved disabled (no port 53 conflict)  
-✅ NIC ring buffer optimized (prevents DHCP packet loss)  
+✅ NIC ring buffer optimized on both cards  
+✅ udev rule for consistent interface naming  
+✅ dnsmasq waits for eno1 before starting  
 ✅ iptables FORWARD chain correct order  
 ✅ EXAM_BLOCK chain connected  
 ✅ Flask dashboard with login  
@@ -854,7 +923,6 @@ Located in `dns/blocked_domains.conf`:
 ✅ Cron jobs for ARP flush and device logging  
 ✅ Auto-start on reboot  
 ✅ Server never sleeps  
-✅ dnsmasq waits for network on boot  
 ✅ GitHub-managed block list  
 
 ---

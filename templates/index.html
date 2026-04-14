@@ -4,6 +4,92 @@
     <meta charset="UTF-8">
     <title>Exam Firewall Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Quick Reference Panel */
+        .control-layout {
+            display: flex;
+            gap: 24px;
+            align-items: flex-start;
+        }
+
+        .control-left {
+            flex: 1;
+        }
+
+        .quick-ref {
+            width: 280px;
+            flex-shrink: 0;
+        }
+
+        .quick-ref-toggle {
+            background: #4a6cf7;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            width: 100%;
+            text-align: left;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+        }
+
+        .quick-ref-toggle:hover {
+            background: #3554d1;
+        }
+
+        .quick-ref-body {
+            display: none;
+            background: #f4f6fa;
+            border: 1px solid #e6e9f0;
+            border-radius: 8px;
+            margin-top: 8px;
+            padding: 16px;
+            font-size: 13px;
+        }
+
+        .quick-ref-body.open {
+            display: block;
+        }
+
+        .ref-item {
+            margin-bottom: 14px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid #e6e9f0;
+        }
+
+        .ref-item:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .ref-title {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+
+        .ref-desc {
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        /* Responsive - stack on small screens */
+        @media (max-width: 900px) {
+            .control-layout {
+                flex-direction: column;
+            }
+            .quick-ref {
+                width: 100%;
+            }
+        }
+    </style>
 </head>
 
 <body>
@@ -19,68 +105,140 @@
 <div class="section-box">
     <h2>Exam & Network Control</h2>
 
-    <p>
-        <strong>Exam Mode:</strong>
-        {% if exam_status == "active" %}
-            <span style="color:green;font-weight:bold;">ACTIVE</span>
-        {% else %}
-            <span style="color:red;font-weight:bold;">INACTIVE</span>
-        {% endif %}
-    </p>
-    <form action="{{ url_for('exam_on') }}" method="get" style="display:inline;">
-        <button type="submit">Enable Exam Mode</button>
-    </form>
-    <form action="{{ url_for('exam_off') }}" method="get" style="display:inline;">
-        <button type="submit">Disable Exam Mode</button>
-    </form>
+    <div class="control-layout">
 
-    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e6e9f0;">
+        <!-- Left: Controls -->
+        <div class="control-left">
 
-    <p>
-        <strong>Network Status:</strong>
-        {% if network_status == "killed" %}
-            <span style="color:red;font-weight:bold;">⛔ ALL STUDENTS DISCONNECTED</span>
-        {% else %}
-            <span style="color:green;font-weight:bold;">✅ Network Active</span>
-        {% endif %}
-    </p>
-    {% if network_status == "killed" %}
-        <form action="{{ url_for('network_restore') }}" method="get" style="display:inline;">
-            <button type="submit" style="background-color:#27ae60;">
-                ✅ Restore All Internet
-            </button>
-        </form>
-    {% else %}
-        <form action="{{ url_for('network_kill') }}" method="get" style="display:inline;">
-            <button type="submit" style="background-color:#e74c3c;">
-                ⛔ Kill All Internet
-            </button>
-        </form>
-    {% endif %}
+            <p>
+                <strong>Exam Mode:</strong>
+                {% if exam_status == "active" %}
+                    <span style="color:green;font-weight:bold;">ACTIVE</span>
+                {% else %}
+                    <span style="color:red;font-weight:bold;">INACTIVE</span>
+                {% endif %}
+            </p>
+            <form action="{{ url_for('exam_on') }}" method="get" style="display:inline;">
+                <button type="submit">Enable Exam Mode</button>
+            </form>
+            <form action="{{ url_for('exam_off') }}" method="get" style="display:inline;">
+                <button type="submit">Disable Exam Mode</button>
+            </form>
 
-    <hr style="margin: 20px 0; border: none; border-top: 1px solid #e6e9f0;">
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #e6e9f0;">
 
-    <p>
-        <strong>Strict Mode:</strong>
-        {% if strict_status == "active" %}
-            <span style="color:red;font-weight:bold;">🔒 ACTIVE — Classroom & Docs Only</span>
-        {% else %}
-            <span style="color:green;font-weight:bold;">✅ Off</span>
-        {% endif %}
-    </p>
-    {% if strict_status == "active" %}
-        <form action="{{ url_for('strict_off') }}" method="get" style="display:inline;">
-            <button type="submit" style="background-color:#27ae60;">
-                ✅ Disable Strict Mode
+            <p>
+                <strong>Network Status:</strong>
+                {% if network_status == "killed" %}
+                    <span style="color:red;font-weight:bold;">⛔ ALL STUDENTS DISCONNECTED</span>
+                {% else %}
+                    <span style="color:green;font-weight:bold;">✅ Network Active</span>
+                {% endif %}
+            </p>
+            {% if network_status == "killed" %}
+                <form action="{{ url_for('network_restore') }}" method="get" style="display:inline;">
+                    <button type="submit" style="background-color:#27ae60;">
+                        ✅ Restore All Internet
+                    </button>
+                </form>
+            {% else %}
+                <form action="{{ url_for('network_kill') }}" method="get" style="display:inline;">
+                    <button type="submit" style="background-color:#e74c3c;">
+                        ⛔ Kill All Internet
+                    </button>
+                </form>
+            {% endif %}
+
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #e6e9f0;">
+
+            <p>
+                <strong>Strict Mode:</strong>
+                {% if strict_status == "active" %}
+                    <span style="color:red;font-weight:bold;">🔒 ACTIVE — Classroom & Docs Only</span>
+                {% else %}
+                    <span style="color:green;font-weight:bold;">✅ Off</span>
+                {% endif %}
+            </p>
+            {% if strict_status == "active" %}
+                <form action="{{ url_for('strict_off') }}" method="get" style="display:inline;">
+                    <button type="submit" style="background-color:#27ae60;">
+                        ✅ Disable Strict Mode
+                    </button>
+                </form>
+            {% else %}
+                <form action="{{ url_for('strict_on') }}" method="get" style="display:inline;">
+                    <button type="submit" style="background-color:#e67e22;">
+                        🔒 Enable Strict Mode
+                    </button>
+                </form>
+            {% endif %}
+
+        </div>
+
+        <!-- Right: Collapsible Quick Reference -->
+        <div class="quick-ref">
+            <button class="quick-ref-toggle" onclick="toggleRef()">
+                <span>📖 Quick Reference</span>
+                <span id="arrow">▼</span>
             </button>
-        </form>
-    {% else %}
-        <form action="{{ url_for('strict_on') }}" method="get" style="display:inline;">
-            <button type="submit" style="background-color:#e67e22;">
-                🔒 Enable Strict Mode
-            </button>
-        </form>
-    {% endif %}
+
+            <div class="quick-ref-body" id="quickRefBody">
+
+                <div class="ref-item">
+                    <div class="ref-title">🔴 Exam Mode</div>
+                    <div class="ref-desc">
+                        Blocks AI tools (ChatGPT, Gemini, Claude etc.) using DNS filtering.
+                        Students cannot access blocked sites even if they change their DNS settings.
+                    </div>
+                </div>
+
+                <div class="ref-item">
+                    <div class="ref-title">⛔ Kill All Internet</div>
+                    <div class="ref-desc">
+                        Instantly cuts ALL internet access for every student on the network.
+                        Use in emergencies or at the start of an exam.
+                        Click Restore to bring everyone back online.
+                    </div>
+                </div>
+
+                <div class="ref-item">
+                    <div class="ref-title">🔒 Strict Mode</div>
+                    <div class="ref-desc">
+                        Allows ONLY Google Classroom and Google Docs.
+                        All other websites including social media and games are blocked.
+                        Use during open-book exams where only Classroom access is allowed.
+                    </div>
+                </div>
+
+                <div class="ref-item">
+                    <div class="ref-title">🚫 Block Device</div>
+                    <div class="ref-desc">
+                        Cuts internet for one specific student device only.
+                        Other students are not affected.
+                        Click Unblock to restore that device.
+                    </div>
+                </div>
+
+                <div class="ref-item">
+                    <div class="ref-title">🔄 Refresh Devices</div>
+                    <div class="ref-desc">
+                        Scans the network for newly connected devices.
+                        Use if a student's device is not showing in the list.
+                    </div>
+                </div>
+
+                <div class="ref-item">
+                    <div class="ref-title">📊 Analytics</div>
+                    <div class="ref-desc">
+                        View device history and blocked domain attempts at:<br>
+                        <strong>YOUR_WAN_IP:8080</strong>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
 </div>
 
 <div class="section-box">
@@ -142,6 +300,15 @@
 </div>
 
 <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+<script>
+    function toggleRef() {
+        const body = document.getElementById('quickRefBody');
+        const arrow = document.getElementById('arrow');
+        body.classList.toggle('open');
+        arrow.textContent = body.classList.contains('open') ? '▲' : '▼';
+    }
+</script>
 
 </body>
 </html>

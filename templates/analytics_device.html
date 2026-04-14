@@ -13,6 +13,7 @@
             --accent: #00d4ff;
             --green: #00ff88;
             --red: #ff4444;
+            --yellow: #ffd700;
             --text: #e2e8f0;
             --muted: #64748b;
             --font-mono: 'JetBrains Mono', monospace;
@@ -26,7 +27,6 @@
             color: var(--text);
             font-family: var(--font-mono);
             min-height: 100vh;
-            padding: 0;
         }
 
         .header {
@@ -58,14 +58,11 @@
             transition: all 0.2s;
         }
 
-        .back-btn:hover {
-            border-color: var(--accent);
-            color: var(--accent);
-        }
+        .back-btn:hover { border-color: var(--accent); color: var(--accent); }
 
         .main {
             padding: 24px 32px;
-            max-width: 900px;
+            max-width: 1200px;
             margin: 0 auto;
         }
 
@@ -83,6 +80,15 @@
             margin-bottom: 24px;
         }
 
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .full-width { margin-bottom: 24px; }
+
         .card {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -93,6 +99,9 @@
         .card-header {
             padding: 16px 20px;
             border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .card-title {
@@ -104,10 +113,17 @@
             color: var(--accent);
         }
 
-        .table {
-            width: 100%;
-            border-collapse: collapse;
+        .card-title.red { color: var(--red); }
+
+        .card-count {
+            font-size: 11px;
+            color: var(--muted);
+            background: var(--surface2);
+            padding: 3px 10px;
+            border-radius: 20px;
         }
+
+        .table { width: 100%; border-collapse: collapse; }
 
         .table th {
             padding: 10px 20px;
@@ -150,12 +166,16 @@
             border: 1px solid rgba(0,255,136,0.2);
         }
 
+        .scrollable { max-height: 400px; overflow-y: auto; }
+
         .empty {
             padding: 40px;
             text-align: center;
             color: var(--muted);
             font-size: 12px;
         }
+
+        .mono { font-size: 11px; color: var(--muted); }
     </style>
 </head>
 <body>
@@ -167,40 +187,80 @@
 
 <div class="main">
     <div class="ip-title">{{ ip }}</div>
-    <div class="ip-sub">Connection history for the last 24 hours</div>
+    <div class="ip-sub">Full activity log for the last 24 hours</div>
 
-    <div class="card">
-        <div class="card-header">
-            <div class="card-title">Timeline — {{ timeline|length }} entries</div>
+    <div class="grid-2">
+
+        <!-- DNS Blocked Attempts -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title red">🚫 Blocked Domain Attempts</div>
+                <div class="card-count">{{ dns_attempts|length }}</div>
+            </div>
+            <div class="scrollable">
+                {% if dns_attempts %}
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Domain Attempted</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for d in dns_attempts %}
+                        <tr>
+                            <td class="mono">{{ d.timestamp[11:16] }}</td>
+                            <td>
+                                <span class="badge badge-red">🚫 {{ d.domain }}</span>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No blocked attempts for this device</div>
+                {% endif %}
+            </div>
         </div>
-        {% if timeline %}
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Timestamp</th>
-                    <th>State</th>
-                    <th>Firewall</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for t in timeline %}
-                <tr>
-                    <td>{{ t.timestamp }}</td>
-                    <td>{{ t.state }}</td>
-                    <td>
-                        {% if t.blocked %}
-                            <span class="badge badge-red">🚫 Blocked</span>
-                        {% else %}
-                            <span class="badge badge-green">✅ Allowed</span>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <div class="empty">No timeline data for this device</div>
-        {% endif %}
+
+        <!-- Connection Timeline -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Connection Timeline</div>
+                <div class="card-count">{{ timeline|length }} entries</div>
+            </div>
+            <div class="scrollable">
+                {% if timeline %}
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>State</th>
+                            <th>Firewall</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for t in timeline %}
+                        <tr>
+                            <td class="mono">{{ t.timestamp[11:16] }}</td>
+                            <td class="mono">{{ t.state }}</td>
+                            <td>
+                                {% if t.blocked %}
+                                    <span class="badge badge-red">🚫 Blocked</span>
+                                {% else %}
+                                    <span class="badge badge-green">✅ Allowed</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">No timeline data for this device</div>
+                {% endif %}
+            </div>
+        </div>
+
     </div>
 </div>
 

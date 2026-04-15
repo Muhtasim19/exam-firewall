@@ -609,6 +609,7 @@
                         <th>MAC Address</th>
                         <th>First Seen</th>
                         <th>Last Seen</th>
+                        <th>Currently On</th>
                         <th>Blocked Attempts</th>
                         <th>Status</th>
                         <th>Detail</th>
@@ -622,6 +623,13 @@
                         <td class="mono">{{ d.mac }}</td>
                         <td class="mono">{{ d.first_seen[11:16] }}</td>
                         <td class="mono">{{ d.last_seen[11:16] }}</td>
+                        <td>
+                            {% if d.ip in all_activity %}
+                                <span class="mono" style="color: var(--accent);">{{ all_activity[d.ip].domain }}</span>
+                            {% else %}
+                                <span class="mono">—</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {% set attempts = blocked_by_device | selectattr('ip', 'equalto', d.ip) | list %}
                             {% if attempts %}
@@ -639,6 +647,8 @@
                         </td>
                         <td>
                             <a href="{{ url_for('device_detail', ip=d.ip) }}" class="device-link">View →</a>
+                            &nbsp;
+                            <a href="{{ url_for('live', ip=d.ip) }}" class="device-link" style="color: var(--green);">🔴 Live</a>
                         </td>
                     </tr>
                 {% endfor %}

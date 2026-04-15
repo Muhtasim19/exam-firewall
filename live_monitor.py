@@ -32,7 +32,6 @@ SYSTEM_DOMAINS = [
     "arpa",
     "in-addr",
     "msedge.net",
-    "bing.com",
     "live.com",
     "office.com",
     "office365.com",
@@ -41,7 +40,14 @@ SYSTEM_DOMAINS = [
     "avast.com",
     "norton.com",
     "sophos",
+    "ivanti",
+    "symcd.com",
+    "symcb.com",
+    "verisign.com",
+    "entrust.net",
+    "lencr.org",
 ]
+
 
 def is_system_domain(domain):
     """Check if domain is system/background traffic"""
@@ -57,21 +63,24 @@ def get_blocked_domains_set():
     blocked = set()
     block_file = "/etc/dnsmasq.d/exam-block.conf"
     if os.path.exists(block_file):
-        with open(block_file, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("address=/"):
-                    # address=/chatgpt.com/0.0.0.0 → chatgpt.com
-                    parts = line.split("/")
-                    if len(parts) >= 2:
-                        blocked.add(parts[1])
+        try:
+            with open(block_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("address=/"):
+                        parts = line.split("/")
+                        if len(parts) >= 2:
+                            blocked.add(parts[1])
+        except:
+            pass
     return blocked
 
 
 def parse_live_activity(ip, minutes=10):
     """
-    Get recent DNS activity for a specific device
-    Returns list of {time, domain, blocked, query_type}
+    Get recent DNS activity for a specific device.
+    Returns last 100 entries max.
+    Filters system domains — only shows real browsing.
     """
     if not os.path.exists(DNS_LOG_PATH):
         return []
@@ -82,9 +91,8 @@ def parse_live_activity(ip, minutes=10):
     seen_domains = set()
 
     try:
-        # Read last portion of log file for speed
+        # Read last 2MB of log for performance
         with open(DNS_LOG_PATH, "r") as f:
-            # Seek to last 2MB for performance
             f.seek(0, 2)
             file_size = f.tell()
             seek_pos = max(0, file_size - 2 * 1024 * 1024)
@@ -92,11 +100,15 @@ def parse_live_activity(ip, minutes=10):
             lines = f.readlines()
 
         for line in reversed(lines):
+            # Stop if we have 100 entries
+            if len(results) >= 100:
+                break
+
             # Only process query lines for this IP
             if f"from {ip}" not in line:
                 continue
 
-            # Only process A record queries (actual browsing)
+            # Only process A record and HTTPS queries
             if "query[A]" not in line and "query[HTTPS]" not in line:
                 continue
 
@@ -129,7 +141,7 @@ def parse_live_activity(ip, minutes=10):
             if is_system_domain(domain):
                 continue
 
-            # Deduplicate within 30 second windows
+            # Deduplicate within same minute
             time_key = f"{domain}_{log_time.strftime('%H:%M')}"
             if time_key in seen_domains:
                 continue
@@ -151,7 +163,7 @@ def parse_live_activity(ip, minutes=10):
     except Exception as e:
         print(f"Live monitor error: {e}")
 
-    return results[:50]  # Return last 50 entries
+    return results
 
 
 def get_current_site(ip):
@@ -163,7 +175,10 @@ def get_current_site(ip):
 
 
 def get_all_devices_activity():
-    """Get latest activity for all devices - for overview page"""
+    """
+    Get latest activity for all devices — for overview column.
+    Only reads last 1MB for speed.
+    """
     if not os.path.exists(DNS_LOG_PATH):
         return {}
 
@@ -193,9 +208,11 @@ def get_all_devices_activity():
             domain = match.group(2).lower()
             ip = match.group(3)
 
+            # Skip system domains
             if is_system_domain(domain):
                 continue
 
+            # Only keep first (most recent) result per device
             if ip in devices:
                 continue
 

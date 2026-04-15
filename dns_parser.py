@@ -34,10 +34,36 @@ def init_dns_table():
 
 
 def cleanup_old_dns_data():
+    """Delete entries older than 1 day"""
     conn = get_db()
     c = conn.cursor()
     cutoff = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
     c.execute("DELETE FROM dns_block_log WHERE timestamp < ?", (cutoff,))
+    conn.commit()
+    conn.close()
+
+
+def cleanup_per_device(max_entries=100):
+    """Keep only last 100 blocked entries per device"""
+    conn = get_db()
+    c = conn.cursor()
+
+    # Get all unique IPs
+    c.execute("SELECT DISTINCT ip FROM dns_block_log")
+    ips = [row['ip'] for row in c.fetchall()]
+
+    for ip in ips:
+        # Delete oldest entries keeping only last max_entries
+        c.execute('''
+            DELETE FROM dns_block_log
+            WHERE ip = ? AND id NOT IN (
+                SELECT id FROM dns_block_log
+                WHERE ip = ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+            )
+        ''', (ip, ip, max_entries))
+
     conn.commit()
     conn.close()
 
@@ -76,13 +102,11 @@ def parse_dns_log():
     """
     Parse dnsmasq log and extract blocked domain attempts.
     A blocked domain is one that resolves to 0.0.0.0.
-    
-    Log format:
-    Apr 14 15:29:18 dnsmasq[31107]: query[A] chatgpt.com from 192.168.50.106
-    Apr 14 15:29:18 dnsmasq[31107]: reply chatgpt.com is 0.0.0.0
+    Keeps only last 100 blocked entries per device.
     """
     init_dns_table()
     cleanup_old_dns_data()
+    cleanup_per_device(100)
 
     if not os.path.exists(DNS_LOG_PATH):
         return 0

@@ -5,6 +5,7 @@ from werkzeug.security import check_password_hash
 from time import time
 import analytics
 import dns_parser
+import live_monitor
 import os
 
 # =========================
@@ -86,6 +87,9 @@ def index():
     blocked_by_device = dns_parser.get_blocked_by_device()
     total_blocked = dns_parser.get_total_blocked_today()
 
+    # Get current activity for all devices
+    all_activity = live_monitor.get_all_devices_activity()
+
     return render_template(
         "analytics.html",
         devices=devices,
@@ -96,7 +100,8 @@ def index():
         blocked_domains=blocked_domains,
         top_domains=top_domains,
         blocked_by_device=blocked_by_device,
-        total_blocked=total_blocked
+        total_blocked=total_blocked,
+        all_activity=all_activity
     )
 
 @app.route("/device/<ip>")
@@ -109,6 +114,31 @@ def device_detail(ip):
         ip=ip,
         timeline=timeline,
         dns_attempts=dns_attempts
+    )
+
+# =========================
+# LIVE MONITOR
+# =========================
+@app.route("/live/<ip>")
+@login_required
+def live(ip):
+    # Get hostname from analytics
+    devices = analytics.get_device_summary()
+    hostname = "Unknown"
+    for d in devices:
+        if d['ip'] == ip:
+            hostname = d['hostname']
+            break
+
+    activity = live_monitor.parse_live_activity(ip, minutes=10)
+    current_site = live_monitor.get_current_site(ip)
+
+    return render_template(
+        "analytics_live.html",
+        ip=ip,
+        hostname=hostname,
+        activity=activity,
+        current_site=current_site
     )
 
 if __name__ == "__main__":

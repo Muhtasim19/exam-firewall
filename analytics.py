@@ -190,7 +190,7 @@ def get_peak_devices():
     conn = get_db()
     c = conn.cursor()
     c.execute('''
-        SELECT timestamp, COUNT(*) as count
+        SELECT timestamp, COUNT(DISTINCT ip) as count
         FROM device_log
         GROUP BY timestamp
         ORDER BY count DESC

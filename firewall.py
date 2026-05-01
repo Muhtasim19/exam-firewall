@@ -24,13 +24,15 @@ AI_DOMAINS = [
 ]
 
 WHITELIST_IPS = [
-    "142.251.45.0/24",   # Google Classroom
-    "142.251.211.0/24",  # Google Docs
-    "172.253.62.0/24",   # Google Accounts
-    "216.239.32.0/19",   # Google services
-    "64.233.160.0/19",   # Google services
-    "74.125.0.0/16",     # Google broadly
-    "172.217.0.0/16",    # Google broadly
+    "172.25.205.59/32",    # CPSD Domain Controller 1
+    "172.25.205.123/32",   # CPSD Domain Controller 2
+    "142.251.45.0/24",     # Google Classroom
+    "142.251.211.0/24",    # Google Docs
+    "172.253.62.0/24",     # Google Accounts
+    "216.239.32.0/19",     # Google services
+    "64.233.160.0/19",     # Google services
+    "74.125.0.0/16",       # Google broadly
+    "172.217.0.0/16",      # Google broadly
 ]
 
 STRICT_DROP_COMMENT = "strict-mode"
@@ -198,10 +200,10 @@ def strict_mode_on():
         run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
     run_safe("systemctl reload dnsmasq")
 
-    for i, ip in enumerate(WHITELIST_IPS):
+    for i, ip in enumerate():
         run_safe(f"iptables -I FORWARD {i + 2} -i eno1 -d {ip} -j ACCEPT")
 
-    run_safe(f"iptables -I FORWARD {len(WHITELIST_IPS) + 2} -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
+    run_safe(f"iptables -I FORWARD {len() + 2} -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
 
 
 def strict_mode_off():

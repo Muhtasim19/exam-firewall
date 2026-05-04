@@ -11,6 +11,7 @@ It works at the **network level**, so:
 - Students cannot bypass it using IPv6
 - Students cannot bypass it using DNS over HTTPS (DoH)
 - Students cannot bypass it using QUIC/HTTP3
+- Students cannot bypass it using VPN software
 - Apple iCloud Private Relay is disabled on the network
 - Controlled entirely from a **web dashboard**
 
@@ -21,6 +22,7 @@ During exams, students may try to access:
 - AI tools (ChatGPT, OpenAI, Gemini, Claude, Perplexity, etc.)
 - Online games (chess.com, lichess)
 - Streaming sites (Netflix, YouTube)
+- VPN services to bypass the firewall
 
 Blocking at the device level is easy to bypass.
 This firewall enforces rules **before traffic reaches the internet**.
@@ -34,7 +36,9 @@ This firewall enforces rules **before traffic reaches the internet**.
 - Blocks IPv6 DNS responses to prevent bypass
 - Blocks DNS over HTTPS (DoH) bypass attempts
 - Blocks QUIC/HTTP3 (UDP 443) to prevent proxy extensions
+- Blocks common VPN ports (OpenVPN, WireGuard, IPSec, PPTP)
 - Disables Apple iCloud Private Relay
+- Allows school domain controller access for Windows login
 - Blocks selected websites using dnsmasq DNS filtering
 - Auto-resolves AI service IPs dynamically on exam start
 - Detects connected devices with IP, MAC, and hostname
@@ -45,8 +49,10 @@ This firewall enforces rules **before traffic reaches the internet**.
 - Blocked domain list managed from GitHub
 - Served via Nginx + Gunicorn (production ready)
 - Server never sleeps (suspend/hibernate disabled)
+- Server reboots daily at 4 AM for stability
 - Live device logging to `/var/log/exam-firewall.log`
 - Cron jobs for ARP refresh and device logging every minute
+- Live analytics dashboard with DNS query monitoring
 
 ---
 
@@ -135,12 +141,15 @@ exam-firewall/
 │   ├── login.html                 ← Admin login page
 │   ├── analytics.html             ← Analytics dashboard
 │   ├── analytics_login.html       ← Analytics login
-│   └── analytics_device.html     ← Device detail page
+│   ├── analytics_device.html      ← Device detail page
+│   └── analytics_live.html        ← Live student monitor
 │
 ├── app.py                         ← Flask web application
 ├── firewall.py                    ← Firewall & DNS logic
 ├── analytics.py                   ← Analytics database logic
 ├── analytics_app.py               ← Analytics Flask app
+├── dns_parser.py                  ← DNS blocked domain parser
+├── live_monitor.py                ← Live DNS activity monitor
 ├── requirements.txt
 └── README.md
 ```
@@ -208,8 +217,6 @@ ip a show enp2s0 | grep inet
 ### Step 3b: Force Consistent Interface Names (udev Rule)
 
 > ℹ️ **Do this if you added a new NIC or moved a card to a different PCI slot.**
-> Without this, Linux may rename your interfaces after a hardware change, breaking
-> the entire firewall config.
 
 Find the MAC address of each card:
 ```bash
@@ -226,21 +233,11 @@ Paste (replace MAC addresses with your actual ones):
 SUBSYSTEM=="net", ACTION=="add", ATTR{address}=="YOUR_WAN_CARD_MAC", NAME="enp2s0"
 ```
 
-> ℹ️ You only need a rule for the WAN card (`enp2s0`). The built-in Intel card
-> (`eno1`) keeps its name automatically since it's soldered to the motherboard.
-
 Apply:
 ```bash
 sudo udevadm control --reload-rules
 sudo reboot
 ```
-
-After reboot verify:
-```bash
-ip a
-```
-
-Both `eno1` and `enp2s0` should appear with correct IPs.
 
 ---
 
@@ -259,8 +256,7 @@ Make sure the first line includes your hostname:
 ### Step 5: Disable systemd-resolved (Critical for dnsmasq)
 
 > ⚠️ **This is the most important step!** Ubuntu 24.04 runs `systemd-resolved`
-> which holds port 53 and **prevents dnsmasq from starting**. You must disable
-> its stub listener before installing dnsmasq.
+> which holds port 53 and **prevents dnsmasq from starting**.
 
 ```bash
 sudo nano /etc/systemd/resolved.conf
@@ -274,10 +270,6 @@ DNSStubListener=no
 Save, then apply:
 ```bash
 sudo systemctl restart systemd-resolved
-```
-
-Fix the DNS resolver symlink:
-```bash
 sudo rm /etc/resolv.conf
 sudo ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
 ```
@@ -319,10 +311,6 @@ sudo iptables -t nat -A POSTROUTING -o enp2s0 -j MASQUERADE
 ### Step 9: Install isc-dhcp-server
 ```bash
 sudo apt install isc-dhcp-server -y
-```
-
-Configure the DHCP interface:
-```bash
 sudo nano /etc/default/isc-dhcp-server
 ```
 
@@ -331,7 +319,6 @@ Set:
 INTERFACESv4="eno1"
 ```
 
-Configure DHCP leases:
 ```bash
 sudo nano /etc/dhcp/dhcpd.conf
 ```
@@ -367,26 +354,15 @@ local7.*    /var/log/dhcp.log
 
 ```bash
 sudo systemctl restart rsyslog
-```
-
-Start and enable DHCP:
-```bash
 sudo systemctl enable isc-dhcp-server
 sudo systemctl start isc-dhcp-server
 ```
-
-> ⚠️ Do not add any extra lines to dhcpd.conf — this exact format is required.
-> `authoritative` is required so managed Windows devices accept the DHCP offer.
 
 ---
 
 ### Step 10: Install and Configure dnsmasq
 ```bash
 sudo apt install dnsmasq -y
-```
-
-Edit config:
-```bash
 sudo nano /etc/dnsmasq.conf
 ```
 
@@ -399,9 +375,16 @@ server=8.8.4.4
 no-resolv
 conf-dir=/etc/dnsmasq.d/,*.conf
 filter-AAAA
+log-queries
+log-facility=/var/log/dnsmasq.log
+
+# School domain controller — allows Windows domain login
+# Ask school IT for your domain name and DC IP
+server=/cpsd.us/172.25.205.59
+address=/cpsd.us/172.25.205.59
 ```
 
-Create dnsmasq override to wait for network and eno1 on boot:
+Create dnsmasq override:
 ```bash
 sudo mkdir -p /etc/systemd/system/dnsmasq.service.d/
 sudo nano /etc/systemd/system/dnsmasq.service.d/override.conf
@@ -414,24 +397,11 @@ After=network-online.target sys-subsystem-net-devices-eno1.device
 Wants=network-online.target sys-subsystem-net-devices-eno1.device
 ```
 
-> ⚠️ This stronger override ensures dnsmasq waits for `eno1` to get its IP before
-> starting. Without this, dnsmasq may fail on boot after a BIOS update or reboot.
-
-Start dnsmasq:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable dnsmasq
 sudo systemctl restart dnsmasq
-sudo systemctl status dnsmasq
 ```
-
-Should show `active (running)`. If it fails run:
-```bash
-sudo dnsmasq --test
-sudo ss -tulpn | grep :53
-```
-
-> ⚠️ `filter-AAAA` blocks IPv6 DNS responses — students cannot bypass using IPv6.
 
 ---
 
@@ -445,15 +415,23 @@ sudo iptables -t nat -A PREROUTING -i eno1 -p udp --dport 53 -j REDIRECT --to-po
 sudo iptables -t nat -A PREROUTING -i eno1 -p tcp --dport 53 -j REDIRECT --to-ports 53
 ```
 
-Build FORWARD chain in correct order:
+Allow domain controller traffic (Windows login):
 ```bash
-# 1. Dashboard control chain first
+sudo iptables -I FORWARD 1 -i eno1 -d 172.25.205.59 -j ACCEPT
+sudo iptables -I FORWARD 1 -i eno1 -d 172.25.205.123 -j ACCEPT
+sudo iptables -I FORWARD 1 -s 172.25.205.59 -o eno1 -j ACCEPT
+sudo iptables -I FORWARD 1 -s 172.25.205.123 -o eno1 -j ACCEPT
+```
+
+Build FORWARD chain:
+```bash
+# Dashboard control chain first
 sudo iptables -A FORWARD -j EXAM_BLOCK
 
-# 2. Allow established connections
+# Allow established connections
 sudo iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 
-# 3. Block external DNS servers
+# Block external DNS servers
 sudo iptables -A FORWARD -i eno1 -d 8.8.8.8 -j DROP
 sudo iptables -A FORWARD -i eno1 -d 8.8.4.4 -j DROP
 sudo iptables -A FORWARD -i eno1 -d 1.1.1.1 -j DROP
@@ -462,10 +440,18 @@ sudo iptables -A FORWARD -i eno1 -d 9.9.9.9 -j DROP
 sudo iptables -A FORWARD -i eno1 -d 208.67.222.222 -j DROP
 sudo iptables -A FORWARD -i eno1 -d 208.67.220.220 -j DROP
 
-# 4. Block QUIC/HTTP3 proxy bypass
+# Block QUIC/HTTP3
 sudo iptables -A FORWARD -i eno1 -p udp --dport 443 -j DROP
 
-# 5. Allow normal internet traffic
+# Block VPN ports
+sudo iptables -A FORWARD -i eno1 -p udp --dport 1194 -j DROP
+sudo iptables -A FORWARD -i eno1 -p tcp --dport 1194 -j DROP
+sudo iptables -A FORWARD -i eno1 -p udp --dport 51820 -j DROP
+sudo iptables -A FORWARD -i eno1 -p udp --dport 500 -j DROP
+sudo iptables -A FORWARD -i eno1 -p udp --dport 4500 -j DROP
+sudo iptables -A FORWARD -i eno1 -p tcp --dport 1723 -j DROP
+
+# Allow normal internet traffic
 sudo iptables -A FORWARD -i eno1 -o enp2s0 -j ACCEPT
 sudo iptables -A FORWARD -i enp2s0 -o eno1 -m state --state RELATED,ESTABLISHED -j ACCEPT
 ```
@@ -485,27 +471,19 @@ sudo ip6tables -A FORWARD -i eno1 -j DROP
 
 ### Step 12: Fix NIC Ring Buffer (Prevents DHCP Packet Loss)
 
-> ⚠️ **Critical for stability!** Some NICs drop DHCP packets under load.
-> This fix prevents students randomly losing internet.
-
-Check buffer capacity on both cards:
 ```bash
 sudo ethtool -g eno1
 sudo ethtool -g enp2s0
+sudo ethtool -G eno1 rx 4096
+sudo ethtool -G enp2s0 rx 256
 ```
 
-Look at **Pre-set maximums RX** for each card and set to the maximum:
-```bash
-sudo ethtool -G eno1 rx 4096    # use Pre-set maximum shown above
-sudo ethtool -G enp2s0 rx 256   # use Pre-set maximum shown above
-```
-
-Make permanent with a systemd service:
+Make permanent:
 ```bash
 sudo nano /etc/systemd/system/optimize-eno1.service
 ```
 
-Paste (adjust rx values to match your card's Pre-set maximums):
+Paste:
 ```ini
 [Unit]
 Description=Increase RX Ring Buffer on NICs
@@ -521,31 +499,17 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 ```
 
-Enable:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable optimize-eno1.service
 sudo systemctl start optimize-eno1.service
 ```
 
-Monitor for missed packets:
-```bash
-watch -n 2 ip -s link show eno1
-```
-
-The `missed` counter should stay at 0.
-
-> ⚠️ If missed packets keep climbing even at maximum rx, the NIC hardware is
-> failing. Replace the network card.
-
 ---
 
 ### Step 13: Disable Server Sleep
 ```bash
-sudo systemctl mask sleep.target
-sudo systemctl mask suspend.target
-sudo systemctl mask hibernate.target
-sudo systemctl mask hybrid-sleep.target
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
 ```
 
 ---
@@ -560,7 +524,7 @@ sudo netfilter-persistent save
 
 ### Step 15: Install Required Tools
 ```bash
-sudo apt install nmap git python3 python3-venv python3-pip arping -y
+sudo apt install nmap git python3 python3-venv python3-pip -y
 ```
 
 ---
@@ -654,10 +618,6 @@ server {
 sudo ln -s /etc/nginx/sites-available/exam-analytics /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl restart nginx
-```
-
-Open ports:
-```bash
 sudo iptables -I INPUT -i enp2s0 -p tcp --dport 80 -j ACCEPT
 sudo iptables -I INPUT -i enp2s0 -p tcp --dport 8080 -j ACCEPT
 sudo netfilter-persistent save
@@ -666,6 +626,7 @@ sudo netfilter-persistent save
 ---
 
 ### Step 21: Set Up Systemd Services
+
 Main dashboard:
 ```bash
 sudo nano /etc/systemd/system/exam-dashboard.service
@@ -710,7 +671,6 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
-Enable both:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable exam-dashboard exam-analytics
@@ -724,35 +684,45 @@ sudo systemctl start exam-dashboard exam-analytics
 sudo crontab -e
 ```
 
-Add these three lines:
+Add these lines:
 ```
 * * * * * ip neigh flush dev eno1 nud failed; ip neigh flush dev eno1 nud incomplete
 * * * * * for i in $(seq 100 200); do ping -c 1 -W 1 192.168.50.$i > /dev/null 2>&1 & done
 * * * * * cd /home/admin_luniux/exam-firewall/exam-firewall && /home/admin_luniux/exam-firewall/exam-firewall/venv/bin/python3 -c "import firewall; firewall.connected_devices()"
+0 4 * * * /sbin/reboot
+```
+
+> ℹ️ The last line reboots the server daily at 4 AM for stability.
+
+---
+
+### Step 23: Set Up Log Rotation
+```bash
+sudo nano /etc/logrotate.d/dnsmasq
+```
+
+Paste:
+```
+/var/log/dnsmasq.log {
+    daily
+    rotate 2
+    compress
+    missingok
+    notifempty
+    create 644 root root
+    su root root
+    postrotate
+        systemctl restart dnsmasq
+    endscript
+}
 ```
 
 ---
 
-### Step 23: Verify Everything is Running
+### Step 24: Verify Everything is Running
 ```bash
-sudo systemctl is-active exam-dashboard exam-analytics nginx dnsmasq isc-dhcp-server optimize-eno1
-```
-
-All should show `active`.
-
-Verify firewall chain order:
-```bash
-sudo iptables-save -c
-```
-
-FORWARD chain should be in this exact order:
-```
-1. EXAM_BLOCK
-2. RELATED,ESTABLISHED ACCEPT
-3. DROP external DNS servers
-4. DROP UDP 443 (QUIC)
-5. ACCEPT eno1 → enp2s0
-6. ACCEPT enp2s0 → eno1 (established)
+sudo systemctl is-active exam-dashboard exam-analytics nginx dnsmasq isc-dhcp-server
+sudo iptables-save -c | head -30
 ```
 
 ---
@@ -767,6 +737,42 @@ sudo reboot
 ```
 
 > ⚠️ Uses 2-3 GB extra disk, 500 MB+ extra RAM, may slow down the firewall.
+
+---
+
+## Domain Controller Setup (Windows Login)
+
+> ℹ️ This allows students to login with school domain credentials while
+> connected to the exam firewall network.
+
+**Step 1 — Discover domain controller using nmap:**
+```bash
+sudo nmap -p 53,88,389,445 YOUR_DC_IP
+```
+
+**Step 2 — Allow DC traffic in iptables:**
+```bash
+sudo iptables -I FORWARD 1 -i eno1 -d YOUR_DC_IP -j ACCEPT
+sudo iptables -I FORWARD 1 -s YOUR_DC_IP -o eno1 -j ACCEPT
+sudo netfilter-persistent save
+```
+
+**Step 3 — Add DC DNS to dnsmasq:**
+```bash
+sudo nano /etc/dnsmasq.conf
+```
+
+Add:
+```
+server=/yourdomain.us/YOUR_DC_IP
+address=/yourdomain.us/YOUR_DC_IP
+```
+
+```bash
+sudo systemctl restart dnsmasq
+```
+
+> ℹ️ Ask school IT for domain controller IPs and domain name if unknown.
 
 ---
 
@@ -807,12 +813,14 @@ Located in `dns/blocked_domains.conf`:
 | Category | Sites |
 |----------|-------|
 | AI Tools | chatgpt.com, openai.com, claude.ai, gemini.google.com, perplexity.ai, grok.com, deepseek.com |
+| AI Writing | grammarly.com |
 | AI Image | midjourney.com, leonardo.ai, dreamstudio.ai |
 | AI Video | runwayml.com, pika.art, synthesia.io |
 | AI Audio | elevenlabs.io, suno.ai |
 | AI Coding | copilot.github.com, githubcopilot.com |
 | Games | chess.com, lichess.org |
 | Streaming | netflix.com, youtube.com |
+| VPN Services | nordvpn.com, expressvpn.com, protonvpn.com, surfshark.com |
 | DoH Bypass | use-application-dns.net |
 | Apple Relay | mask.icloud.com, mask-h2.icloud.com |
 
@@ -828,7 +836,9 @@ Located in `dns/blocked_domains.conf`:
 - 🔴 Enable / Disable Exam Mode (blocks AI sites, auto-resolves IPs)
 - 🔒 Enable / Disable Strict Mode (Classroom & Docs only)
 - 🔄 Auto-refreshes every 10 seconds with countdown timer
+- 📖 Quick Reference panel — explains each button
 - 📊 Separate analytics dashboard at port 8080
+- 🔍 Live student monitor — see what each device is browsing in real time
 
 ---
 
@@ -843,6 +853,11 @@ Located in `dns/blocked_domains.conf`:
 | Apple iCloud Private Relay | Null-route mask.icloud.com domains |
 | QUIC/HTTP3 proxy extensions | Block UDP port 443 |
 | OpenDNS | Block 208.67.222.222 and 208.67.220.220 |
+| OpenVPN | Block UDP/TCP port 1194 |
+| WireGuard | Block UDP port 51820 |
+| IPSec/IKEv2 | Block UDP ports 500 and 4500 |
+| PPTP VPN | Block TCP port 1723 |
+| VPN websites | Blocked via DNS in blocked_domains.conf |
 
 ---
 
@@ -852,10 +867,10 @@ Located in `dns/blocked_domains.conf`:
 |-----|---------|
 | Live device log | `sudo tail -f /var/log/exam-firewall.log` |
 | DHCP log | `sudo tail -f /var/log/dhcp.log` |
+| DNS query log | `sudo tail -f /var/log/dnsmasq.log` |
 | Dashboard logs | `sudo journalctl -u exam-dashboard -n 50 --no-pager` |
 | Analytics logs | `sudo journalctl -u exam-analytics -n 50 --no-pager` |
 | Nginx error log | `sudo tail -f /var/log/nginx/error.log` |
-| dnsmasq log | `sudo journalctl -u dnsmasq -n 50 --no-pager` |
 | NIC hardware stats | `ip -s link show eno1` |
 | All live logs | `sudo journalctl -f` |
 
@@ -884,9 +899,11 @@ Located in `dns/blocked_domains.conf`:
 | DHCP not giving IPs | Check `authoritative` is in `/etc/dhcp/dhcpd.conf` |
 | Internet drops on exam mode | dnsmasq uses `reload` not `restart` — check firewall.py |
 | Devices randomly lose internet | Check NIC: `ip -s link show eno1` — missed packets growing? |
-| DHCP packets dropped by NIC | Run `sudo systemctl status optimize-eno1` — check Step 12 |
+| DHCP packets dropped by NIC | Run `sudo ethtool -g eno1` — is RX at maximum? |
 | Missed packets keep climbing | NIC hardware is failing — replace the network card |
-| FORWARD chain wrong order | Run `sudo iptables-save -c` and verify EXAM_BLOCK is first |
+| FORWARD chain wrong order | Run `sudo iptables-save -c` and verify EXAM_BLOCK is correct |
+| Windows domain login fails | Check DC rules in iptables and dnsmasq DC DNS entry (Step 11) |
+| Server loses internet after days | Daily 4 AM reboot via cron handles this automatically |
 
 ---
 
@@ -899,18 +916,24 @@ Located in `dns/blocked_domains.conf`:
 ✅ IPv6 bypass blocked  
 ✅ DNS over HTTPS (DoH) bypass blocked  
 ✅ QUIC/HTTP3 proxy bypass blocked  
+✅ VPN ports blocked (OpenVPN, WireGuard, IPSec, PPTP)  
+✅ VPN service websites blocked  
 ✅ Apple iCloud Private Relay disabled  
 ✅ OpenDNS blocked  
+✅ Windows domain login working (DC whitelisted)  
 ✅ systemd-resolved disabled (no port 53 conflict)  
-✅ NIC ring buffer optimized on both cards  
+✅ NIC ring buffer optimized  
 ✅ udev rule for consistent interface naming  
 ✅ dnsmasq waits for eno1 before starting  
 ✅ iptables FORWARD chain correct order  
 ✅ EXAM_BLOCK chain connected  
 ✅ Flask dashboard with login  
+✅ Quick Reference panel on dashboard  
 ✅ Nginx + Gunicorn production setup  
 ✅ Teacher access via `http://YOUR_WAN_IP`  
 ✅ Analytics dashboard via `http://YOUR_WAN_IP:8080`  
+✅ Live student monitor per device  
+✅ DNS blocked domain logging  
 ✅ Device detection with hostname  
 ✅ Individual device blocking/unblocking  
 ✅ Kill switch / Restore all internet  
@@ -921,9 +944,12 @@ Located in `dns/blocked_domains.conf`:
 ✅ Live device logging  
 ✅ SQLite analytics database  
 ✅ Cron jobs for ARP flush and device logging  
+✅ Daily 4 AM reboot for stability  
+✅ Log rotation (2 days compressed)  
 ✅ Auto-start on reboot  
 ✅ Server never sleeps  
 ✅ GitHub-managed block list  
+
 
 ---
 

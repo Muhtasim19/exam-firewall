@@ -329,12 +329,11 @@
     let sortDirection = 1; // 1 = ascending, -1 = descending
 
     function getHostnameNumber(hostname) {
-        // Extract trailing number from hostname e.g. CRL-1311B-07 -> 7
         const match = hostname.match(/(\d+)$/);
         return match ? parseInt(match[1]) : 9999;
     }
 
-    function sortByHostname() {
+    function applySortDirection(dir) {
         const table = document.querySelector('tbody');
         const rows = Array.from(table.querySelectorAll('tr'));
         const arrow = document.getElementById('sort-arrow');
@@ -345,25 +344,37 @@
             const numA = getHostnameNumber(hostnameA);
             const numB = getHostnameNumber(hostnameB);
 
-            // Both have numbers - sort numerically
-            if (numA !== 9999 && numB !== 9999) {
-                return (numA - numB) * sortDirection;
-            }
-            // Only A has number - A comes first
-            if (numA !== 9999) return -1 * sortDirection;
-            // Only B has number - B comes first
-            if (numB !== 9999) return 1 * sortDirection;
-            // Neither has number - sort alphabetically
-            return hostnameA.localeCompare(hostnameB) * sortDirection;
+            if (numA !== 9999 && numB !== 9999) return (numA - numB) * dir;
+            if (numA !== 9999) return -1 * dir;
+            if (numB !== 9999) return 1 * dir;
+            return hostnameA.localeCompare(hostnameB) * dir;
         });
 
-        // Re-append sorted rows
         rows.forEach(row => table.appendChild(row));
-
-        // Toggle direction and update arrow
-        sortDirection *= -1;
-        arrow.textContent = sortDirection === 1 ? '↑' : '↓';
+        arrow.textContent = dir === 1 ? '↑' : '↓';
     }
+
+    function sortByHostname() {
+        applySortDirection(sortDirection);
+
+        // Save sort state to URL hash — persists through auto-refresh
+        window.location.hash = sortDirection === 1 ? 'sort-asc' : 'sort-desc';
+
+        // Toggle direction for next click
+        sortDirection *= -1;
+    }
+
+    // Re-apply sort on page load if hash is set
+    window.addEventListener('load', function() {
+        const hash = window.location.hash;
+        if (hash === '#sort-asc') {
+            applySortDirection(1);
+            sortDirection = -1; // next click reverses
+        } else if (hash === '#sort-desc') {
+            applySortDirection(-1);
+            sortDirection = 1; // next click reverses
+        }
+    });
 </script>
 
 </body>

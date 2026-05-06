@@ -5,6 +5,22 @@
     <title>Exam Firewall Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
+        /* Sortable Hostname Column */
+        .sort-header {
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .sort-header:hover {
+            color: #4a6cf7;
+        }
+        .sort-arrow {
+            display: inline-block;
+            margin-left: 4px;
+            font-size: 11px;
+            color: #4a6cf7;
+        }
+
         /* Quick Reference Panel */
         .control-layout {
             display: flex;
@@ -255,7 +271,7 @@
             <tr>
                 <th>IP Address</th>
                 <th>MAC Address</th>
-                <th>Hostname</th>
+                <th class="sort-header" onclick="sortByHostname()" id="hostname-header">Hostname <span class="sort-arrow" id="sort-arrow">↕</span></th>
                 <th>Network State</th>
                 <th>Firewall Status</th>
                 <th>Action</th>
@@ -307,6 +323,46 @@
         const arrow = document.getElementById('arrow');
         body.classList.toggle('open');
         arrow.textContent = body.classList.contains('open') ? '▲' : '▼';
+    }
+
+    // Hostname sort
+    let sortDirection = 1; // 1 = ascending, -1 = descending
+
+    function getHostnameNumber(hostname) {
+        // Extract trailing number from hostname e.g. CRL-1311B-07 -> 7
+        const match = hostname.match(/(\d+)$/);
+        return match ? parseInt(match[1]) : 9999;
+    }
+
+    function sortByHostname() {
+        const table = document.querySelector('tbody');
+        const rows = Array.from(table.querySelectorAll('tr'));
+        const arrow = document.getElementById('sort-arrow');
+
+        rows.sort((a, b) => {
+            const hostnameA = a.cells[2].textContent.trim().toLowerCase();
+            const hostnameB = b.cells[2].textContent.trim().toLowerCase();
+            const numA = getHostnameNumber(hostnameA);
+            const numB = getHostnameNumber(hostnameB);
+
+            // Both have numbers - sort numerically
+            if (numA !== 9999 && numB !== 9999) {
+                return (numA - numB) * sortDirection;
+            }
+            // Only A has number - A comes first
+            if (numA !== 9999) return -1 * sortDirection;
+            // Only B has number - B comes first
+            if (numB !== 9999) return 1 * sortDirection;
+            // Neither has number - sort alphabetically
+            return hostnameA.localeCompare(hostnameB) * sortDirection;
+        });
+
+        // Re-append sorted rows
+        rows.forEach(row => table.appendChild(row));
+
+        // Toggle direction and update arrow
+        sortDirection *= -1;
+        arrow.textContent = sortDirection === 1 ? '↑' : '↓';
     }
 </script>
 

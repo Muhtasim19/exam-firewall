@@ -258,6 +258,58 @@
 </div>
 
 <div class="section-box">
+    <h2>🚫 Custom Website Block</h2>
+
+    <form action="{{ url_for('custom_block_add') }}" method="post" style="display:flex; gap:10px; align-items:center; margin-bottom:20px;">
+        <input
+            type="text"
+            name="domain"
+            placeholder="e.g. nytimes.com"
+            required
+            style="padding:10px 14px; border:1px solid #e6e9f0; border-radius:8px; font-size:14px; width:280px;"
+        >
+        <button type="submit" style="background-color:#e74c3c;">
+            🚫 Block Site
+        </button>
+    </form>
+
+    {% if custom_blocked %}
+    <table>
+        <thead>
+            <tr>
+                <th>Blocked Domain</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for domain in custom_blocked %}
+            <tr>
+                <td>{{ domain }}</td>
+                <td>
+                    <form action="{{ url_for('custom_block_remove', domain=domain) }}" method="get" style="display:inline;">
+                        <button type="submit" style="background-color:#27ae60;">
+                            ✅ Unblock
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <form action="{{ url_for('custom_block_clear') }}" method="get" style="margin-top:15px;">
+        <button type="submit" style="background-color:#95a5a6;">
+            🗑️ Clear All Custom Blocks
+        </button>
+    </form>
+
+    {% else %}
+    <p style="color:#64748b; font-size:14px;">No custom blocks active. Type a domain above to block it instantly.</p>
+    {% endif %}
+
+</div>
+
+<div class="section-box">
     <h2>Connected Devices</h2>
 
     <form action="{{ url_for('refresh_devices') }}" method="get" style="display:inline; margin-bottom:15px;">

@@ -4,6 +4,7 @@ from datetime import timedelta
 from werkzeug.security import check_password_hash
 from time import time
 import firewall
+import custom_block
 import os
 
 # =========================
@@ -18,7 +19,6 @@ app.permanent_session_lifetime = timedelta(minutes=10)
 # =========================
 # ADMIN PASSWORD HASH
 # =========================
-
 ADMIN_PASSWORD_HASH = os.environ.get(
     "ADMIN_PASSWORD_HASH",
     "scrypt:32768:8:1$HfFB1ZMCjYvHQ5wD$fb02e9e3be4c6e9053a2dac4a1099b7387fcf36b19fccc97dec1e6b38114fe6e9f853aabe626403573a270df28e6da53d8a67eb17124d094f25b0fec4f50a790"
@@ -107,17 +107,20 @@ def logout():
 @login_required
 def index():
     exam_status = firewall.exam_status()
+    strict_status = firewall.strict_status()
     devices = firewall.connected_devices()
     network_status = firewall.network_status()
-    strict_status = firewall.strict_status()
+    custom_blocked = custom_block.get_custom_blocked()
 
     return render_template(
         "index.html",
         exam_status=exam_status,
+        strict_status=strict_status,
         devices=devices,
         network_status=network_status,
-        strict_status=strict_status
+        custom_blocked=custom_blocked
     )
+
 # =========================
 # EXAM CONTROL
 # =========================
@@ -134,7 +137,22 @@ def exam_off():
     return redirect(url_for("index"))
 
 # =========================
-# DEVICE CONTROL (USE IP)
+# STRICT MODE
+# =========================
+@app.route("/strict/on")
+@login_required
+def strict_on():
+    firewall.strict_on()
+    return redirect(url_for("index"))
+
+@app.route("/strict/off")
+@login_required
+def strict_off():
+    firewall.strict_off()
+    return redirect(url_for("index"))
+
+# =========================
+# DEVICE CONTROL
 # =========================
 @app.route("/device/block/<ip>")
 @login_required
@@ -149,9 +167,8 @@ def unblock_device(ip):
     return redirect(url_for("index"))
 
 # =========================
-# Device kill/restore
+# NETWORK KILL/RESTORE
 # =========================
-# CORRECT - different function names
 @app.route("/network/kill")
 @login_required
 def network_kill():
@@ -164,25 +181,36 @@ def network_restore():
     firewall.restore_network()
     return redirect(url_for("index"))
 
-@app.route("/strict/on")
-@login_required
-def strict_on():
-    firewall.strict_mode_on()
-    return redirect(url_for("index"))
-
-@app.route("/strict/off")
-@login_required
-def strict_off():
-    firewall.strict_mode_off()
-    return redirect(url_for("index"))
-
 # =========================
-# Device Refresh
+# REFRESH DEVICES
 # =========================
 @app.route("/devices/refresh")
 @login_required
 def refresh_devices():
-    firewall.refresh_devices()
+    firewall.connected_devices()
+    return redirect(url_for("index"))
+
+# =========================
+# CUSTOM BLOCK
+# =========================
+@app.route("/custom/block", methods=["POST"])
+@login_required
+def custom_block_add():
+    domain = request.form.get("domain", "").strip()
+    if domain:
+        custom_block.add_custom_block(domain)
+    return redirect(url_for("index"))
+
+@app.route("/custom/unblock/<domain>")
+@login_required
+def custom_block_remove(domain):
+    custom_block.remove_custom_block(domain)
+    return redirect(url_for("index"))
+
+@app.route("/custom/clear")
+@login_required
+def custom_block_clear():
+    custom_block.clear_all_custom_blocks()
     return redirect(url_for("index"))
 
 # =========================

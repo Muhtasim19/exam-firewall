@@ -312,11 +312,10 @@
 <div class="section-box">
     <h2>Connected Devices</h2>
 
-    <form action="{{ url_for('refresh_devices') }}" method="get" style="display:inline; margin-bottom:15px;">
-        <button type="submit" style="background-color:#4a6cf7;">
-            🔄 Refresh Devices
-        </button>
-    </form>
+    <!-- Refresh button preserves sort state -->
+    <button onclick="refreshDevices()" style="background-color:#4a6cf7; margin-bottom:15px;">
+        🔄 Refresh Devices
+    </button>
 
     <table>
         <thead>
@@ -377,6 +376,12 @@
         arrow.textContent = body.classList.contains('open') ? '▲' : '▼';
     }
 
+    // Refresh devices while preserving sort state
+    function refreshDevices() {
+        const hash = window.location.hash;
+        window.location.href = "{{ url_for('refresh_devices') }}" + hash;
+    }
+
     // Hostname sort
     let sortDirection = 1; // 1 = ascending, -1 = descending
 
@@ -421,10 +426,10 @@
         const hash = window.location.hash;
         if (hash === '#sort-asc') {
             applySortDirection(1);
-            sortDirection = -1; // next click reverses
+            sortDirection = -1;
         } else if (hash === '#sort-desc') {
             applySortDirection(-1);
-            sortDirection = 1; // next click reverses
+            sortDirection = 1;
         }
     });
 </script>

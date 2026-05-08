@@ -52,7 +52,7 @@ def add_custom_block(domain):
         run(f"bash -c 'echo \"address=/{domain}/0.0.0.0\" >> {CUSTOM_BLOCK_FILE}'")
 
     # Reload dnsmasq
-    run("systemctl restart dnsmasq")
+    run("systemctl reload dnsmasq")
     return True
 
 
@@ -75,7 +75,7 @@ def remove_custom_block(domain):
         run(f"sed -i '/{domain}/d' {CUSTOM_BLOCK_FILE}")
 
     # Reload dnsmasq
-    run("systemctl restart dnsmasq")
+    run("systemctl reload dnsmasq")
     return True
 
 
@@ -87,4 +87,4 @@ def clear_all_custom_blocks():
     except PermissionError:
         run(f"bash -c 'echo \"\" > {CUSTOM_BLOCK_FILE}'")
 
-    run("systemctl restart dnsmasq")
+    run("systemctl reload dnsmasq")

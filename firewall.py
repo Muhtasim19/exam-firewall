@@ -134,7 +134,7 @@ def exam_on():
     if os.path.exists(DNS_SOURCE_FILE):
         run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
 
-    run_safe("systemctl reload dnsmasq")
+    run_safe("systemctl restart dnsmasq")
 
     dynamic_ips = get_ai_ips()
     all_blocks = list(set(IP_BLOCKS + dynamic_ips))
@@ -158,7 +158,7 @@ def exam_off():
     run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
 
     run_safe(f"rm -f {DNS_BLOCK_FILE}")
-    run_safe("systemctl reload dnsmasq")
+    run_safe("systemctl restart dnsmasq")
 
     output = run("iptables -L FORWARD -n")
     for line in output.splitlines():
@@ -198,7 +198,7 @@ def strict_mode_on():
 
     if os.path.exists(DNS_SOURCE_FILE):
         run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
-    run_safe("systemctl reload dnsmasq")
+    run_safe("systemctl restart dnsmasq")
 
     for i, ip in enumerate():
         run_safe(f"iptables -I FORWARD {i + 2} -i eno1 -d {ip} -j ACCEPT")
@@ -228,7 +228,7 @@ def strict_mode_off():
         run_safe(f"iptables -D FORWARD -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
 
     run_safe(f"rm -f {DNS_BLOCK_FILE}")
-    run_safe("systemctl reload dnsmasq")
+    run_safe("systemctl restart dnsmasq")
 
 
 def strict_status():

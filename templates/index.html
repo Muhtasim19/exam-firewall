@@ -329,7 +329,7 @@
             </tr>
         </thead>
 
-        <tbody>
+        <tbody id="devices-tbody">
         {% for d in devices %}
             <tr>
                 <td>{{ d.ip }}</td>
@@ -391,8 +391,8 @@
     }
 
     function applySortDirection(dir) {
-        const table = document.querySelector('tbody');
-        const rows = Array.from(table.querySelectorAll('tr'));
+        const tbody = document.getElementById('devices-tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
         const arrow = document.getElementById('sort-arrow');
 
         rows.sort((a, b) => {
@@ -407,7 +407,7 @@
             return hostnameA.localeCompare(hostnameB) * dir;
         });
 
-        rows.forEach(row => table.appendChild(row));
+        rows.forEach(row => tbody.appendChild(row));
         arrow.textContent = dir === 1 ? '↑' : '↓';
     }
 

@@ -52,7 +52,7 @@ def add_custom_block(domain):
         run(f"bash -c 'echo \"address=/{domain}/0.0.0.0\" >> {CUSTOM_BLOCK_FILE}'")
 
     # Reload dnsmasq
-    run("systemctl reload dnsmasq")
+    run("systemctl restart dnsmasq")
     return True
 
 

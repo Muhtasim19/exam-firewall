@@ -1,6 +1,11 @@
-// Auto refresh
+// Auto refresh - preserves sort state via URL hash
 setTimeout(function () {
-    window.location.reload();
+    const hash = window.location.hash;
+    if (hash) {
+        window.location.href = window.location.pathname + hash;
+    } else {
+        window.location.reload();
+    }
 }, 10000);
 
 // Confirm actions

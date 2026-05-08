@@ -40,6 +40,7 @@ This firewall enforces rules **before traffic reaches the internet**.
 - Disables Apple iCloud Private Relay
 - Allows school domain controller access for Windows login
 - Blocks selected websites using dnsmasq DNS filtering
+- **Custom website blocking from dashboard** — block any site instantly
 - Auto-resolves AI service IPs dynamically on exam start
 - Detects connected devices with IP, MAC, and hostname
 - Allows individual device blocking/unblocking (drops ALL traffic)
@@ -146,6 +147,7 @@ exam-firewall/
 │
 ├── app.py                         ← Flask web application
 ├── firewall.py                    ← Firewall & DNS logic
+├── custom_block.py                ← Custom website block logic
 ├── analytics.py                   ← Analytics database logic
 ├── analytics_app.py               ← Analytics Flask app
 ├── dns_parser.py                  ← DNS blocked domain parser
@@ -194,12 +196,22 @@ network:
   version: 2
   ethernets:
     enp2s0:
-      dhcp4: true
+      dhcp4: false
+      addresses:
+        - YOUR_WAN_IP/24
+      routes:
+        - to: default
+          via: YOUR_GATEWAY_IP
+      nameservers:
+        addresses: [8.8.8.8, 8.8.4.4]
     eno1:
       addresses:
         - 192.168.50.1/24
       dhcp4: false
 ```
+
+> ℹ️ Replace `YOUR_WAN_IP` and `YOUR_GATEWAY_IP` with your school network values.
+> Use `dhcp4: true` for `enp2s0` if you prefer DHCP instead of a static IP.
 
 Save, then apply:
 ```bash
@@ -358,6 +370,23 @@ sudo systemctl enable isc-dhcp-server
 sudo systemctl start isc-dhcp-server
 ```
 
+Add DHCP override to wait for eno1:
+```bash
+sudo mkdir -p /etc/systemd/system/isc-dhcp-server.service.d/
+sudo nano /etc/systemd/system/isc-dhcp-server.service.d/override.conf
+```
+
+Paste:
+```ini
+[Unit]
+After=network-online.target sys-subsystem-net-devices-eno1.device
+Wants=network-online.target sys-subsystem-net-devices-eno1.device
+```
+
+```bash
+sudo systemctl daemon-reload
+```
+
 ---
 
 ### Step 10: Install and Configure dnsmasq
@@ -381,8 +410,11 @@ log-facility=/var/log/dnsmasq.log
 # School domain controller — allows Windows domain login
 # Ask school IT for your domain name and DC IP
 server=/cpsd.us/172.25.205.59
-address=/cpsd.us/172.25.205.59
+server=/aspen.cpsd.us/8.8.8.8
 ```
+
+> ⚠️ Replace `cpsd.us` and `172.25.205.59` with your school's domain and DC IP.
+> The `aspen` line prevents the DC from hijacking the Aspen student portal.
 
 Create dnsmasq override:
 ```bash
@@ -409,6 +441,12 @@ sudo systemctl restart dnsmasq
 
 > ⚠️ **Order matters!** Rules must be added in this exact sequence.
 
+Create EXAM_BLOCK chain:
+```bash
+sudo iptables -N EXAM_BLOCK
+sudo iptables -A EXAM_BLOCK -j RETURN
+```
+
 DNS redirect:
 ```bash
 sudo iptables -t nat -A PREROUTING -i eno1 -p udp --dport 53 -j REDIRECT --to-ports 53
@@ -425,7 +463,7 @@ sudo iptables -I FORWARD 1 -s 172.25.205.123 -o eno1 -j ACCEPT
 
 Build FORWARD chain:
 ```bash
-# Dashboard control chain first
+# Dashboard control chain
 sudo iptables -A FORWARD -j EXAM_BLOCK
 
 # Allow established connections
@@ -477,6 +515,8 @@ sudo ethtool -g enp2s0
 sudo ethtool -G eno1 rx 4096
 sudo ethtool -G enp2s0 rx 256
 ```
+
+> ℹ️ Use the Pre-set maximum values shown for your specific cards.
 
 Make permanent:
 ```bash
@@ -533,7 +573,7 @@ sudo apt install nmap git python3 python3-venv python3-pip -y
 ```bash
 cd ~
 git clone https://github.com/Muhtasim19/exam-firewall.git
-cd exam-firewall/exam-firewall
+cd exam-firewall
 ```
 
 ---
@@ -544,6 +584,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 pip install gunicorn
+deactivate
 ```
 
 ---
@@ -640,8 +681,8 @@ After=network.target
 
 [Service]
 User=root
-WorkingDirectory=/home/admin_luniux/exam-firewall/exam-firewall
-ExecStart=/home/admin_luniux/exam-firewall/exam-firewall/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:5000 app:app
+WorkingDirectory=/home/admin_luniux/exam-firewall
+ExecStart=/home/admin_luniux/exam-firewall/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:5000 app:app
 Restart=always
 RestartSec=3
 
@@ -662,8 +703,8 @@ After=network.target
 
 [Service]
 User=root
-WorkingDirectory=/home/admin_luniux/exam-firewall/exam-firewall
-ExecStart=/home/admin_luniux/exam-firewall/exam-firewall/venv/bin/gunicorn --workers 1 --bind 127.0.0.1:5001 analytics_app:app
+WorkingDirectory=/home/admin_luniux/exam-firewall
+ExecStart=/home/admin_luniux/exam-firewall/venv/bin/gunicorn --workers 1 --bind 127.0.0.1:5001 analytics_app:app
 Restart=always
 RestartSec=3
 
@@ -688,7 +729,7 @@ Add these lines:
 ```
 * * * * * ip neigh flush dev eno1 nud failed; ip neigh flush dev eno1 nud incomplete
 * * * * * for i in $(seq 100 200); do ping -c 1 -W 1 192.168.50.$i > /dev/null 2>&1 & done
-* * * * * cd /home/admin_luniux/exam-firewall/exam-firewall && /home/admin_luniux/exam-firewall/exam-firewall/venv/bin/python3 -c "import firewall; firewall.connected_devices()"
+* * * * * cd /home/admin_luniux/exam-firewall && /home/admin_luniux/exam-firewall/venv/bin/python3 -c "import firewall; firewall.connected_devices()"
 0 4 * * * /sbin/reboot
 ```
 
@@ -722,8 +763,11 @@ Paste:
 ### Step 24: Verify Everything is Running
 ```bash
 sudo systemctl is-active exam-dashboard exam-analytics nginx dnsmasq isc-dhcp-server
-sudo iptables-save -c | head -30
+sudo iptables -L FORWARD -n | head -10
+ip -s link show eno1 | grep missed
 ```
+
+All services should show `active` and missed packets should be `0`.
 
 ---
 
@@ -737,6 +781,8 @@ sudo reboot
 ```
 
 > ⚠️ Uses 2-3 GB extra disk, 500 MB+ extra RAM, may slow down the firewall.
+> On Ubuntu Desktop, NetworkManager may fight with Netplan — use nmcli or
+> a systemd service to set the LAN IP instead.
 
 ---
 
@@ -765,14 +811,57 @@ sudo nano /etc/dnsmasq.conf
 Add:
 ```
 server=/yourdomain.us/YOUR_DC_IP
-address=/yourdomain.us/YOUR_DC_IP
+server=/aspen.yourdomain.us/8.8.8.8
 ```
 
 ```bash
 sudo systemctl restart dnsmasq
 ```
 
-> ℹ️ Ask school IT for domain controller IPs and domain name if unknown.
+> ℹ️ The `aspen` line prevents the DC from hijacking the Aspen student portal.
+> Add similar lines for any other web portals that use your school domain.
+
+---
+
+## Updating the System
+
+After any code changes on GitHub:
+```bash
+cd ~/exam-firewall
+git pull
+sudo systemctl restart exam-dashboard exam-analytics
+```
+
+---
+
+## Student Device Troubleshooting
+
+If a student device has no internet after connecting:
+
+**Windows — run as Administrator:**
+```cmd
+ipconfig /release
+ipconfig /flushdns
+ipconfig /renew
+```
+
+This releases the old school network IP and gets a fresh `192.168.50.x` from the firewall.
+
+---
+
+## Blocking Sites During Class
+
+### Using Custom Block (instant, no restart needed):
+1. Go to dashboard → **Custom Website Block** section
+2. Type the domain (e.g. `nytimes.com`)
+3. Click **🚫 Block Site**
+4. Site is blocked within seconds
+
+### To clear existing connections instantly:
+1. Click **⛔ Kill All Internet**
+2. Add the domain to custom block
+3. Click **✅ Restore All Internet**
+4. All students reconnect with fresh DNS — site is blocked
 
 ---
 
@@ -787,22 +876,8 @@ Analytics dashboard: http://YOUR_WAN_IP:8080
 ### Monitor via SSH
 ```bash
 ssh admin_luniux@YOUR_WAN_IP
-sudo tail -f /var/log/exam-firewall.log
 sudo systemctl is-active exam-dashboard exam-analytics nginx dnsmasq isc-dhcp-server
-```
-
-### Update Blocked Websites
-```bash
-cd ~/exam-firewall/exam-firewall
-git pull
-sudo systemctl reload dnsmasq
-```
-
-### After Server Reboot
-```bash
-cd ~/exam-firewall/exam-firewall
-git pull
-sudo systemctl restart exam-dashboard exam-analytics
+ip -s link show eno1 | grep missed
 ```
 
 ---
@@ -813,15 +888,17 @@ Located in `dns/blocked_domains.conf`:
 | Category | Sites |
 |----------|-------|
 | AI Tools | chatgpt.com, openai.com, claude.ai, gemini.google.com, perplexity.ai, grok.com, deepseek.com |
-| AI Writing | grammarly.com |
+| AI Writing | grammarly.com, quillbot.com, wordtune.com |
 | AI Image | midjourney.com, leonardo.ai, dreamstudio.ai |
 | AI Video | runwayml.com, pika.art, synthesia.io |
 | AI Audio | elevenlabs.io, suno.ai |
 | AI Coding | copilot.github.com, githubcopilot.com |
+| Homework | chegg.com, coursehero.com, brainly.com, quizlet.com |
 | Games | chess.com, lichess.org |
-| Streaming | netflix.com, youtube.com |
+| Streaming | netflix.com, youtube.com, twitch.tv |
 | VPN Services | nordvpn.com, expressvpn.com, protonvpn.com, surfshark.com |
-| DoH Bypass | use-application-dns.net |
+| Remote Access | teamviewer.com, anydesk.com |
+| DoH Bypass | use-application-dns.net, dns.google, cloudflare-dns.com |
 | Apple Relay | mask.icloud.com, mask-h2.icloud.com |
 
 ---
@@ -829,12 +906,15 @@ Located in `dns/blocked_domains.conf`:
 ## Dashboard Features
 - 🔐 Admin login with password protection and lockout after 5 failed attempts
 - 📋 View all connected student devices (IP, MAC, Hostname, Status)
+- 🔢 Sort devices by hostname number (click Hostname column)
 - 🔄 Manual device refresh using nmap subnet scan
 - 🚫 Block / Unblock individual devices (cuts ALL internet for that device)
 - ⛔ Kill All Internet — disconnects every student instantly
 - ✅ Restore All Internet — brings everyone back online
 - 🔴 Enable / Disable Exam Mode (blocks AI sites, auto-resolves IPs)
 - 🔒 Enable / Disable Strict Mode (Classroom & Docs only)
+- 🌐 Custom Website Block — block any site instantly from dashboard
+- 🗑️ Clear All Custom Blocks — removes all custom blocks at once
 - 🔄 Auto-refreshes every 10 seconds with countdown timer
 - 📖 Quick Reference panel — explains each button
 - 📊 Separate analytics dashboard at port 8080
@@ -895,14 +975,18 @@ Located in `dns/blocked_domains.conf`:
 | Devices disappear from dashboard | Click Refresh Devices or wait for auto-refresh |
 | Server goes to sleep | Run `sudo systemctl mask sleep.target suspend.target` |
 | Student device gets 169.254.x.x | Run `ipconfig /release` then `ipconfig /renew` on device |
+| Student has no internet after connecting | Run `ipconfig /release && ipconfig /flushdns && ipconfig /renew` |
 | DHCP crashes with extra lines | Clean dhcpd.conf — only keep the exact format from Step 9 |
 | DHCP not giving IPs | Check `authoritative` is in `/etc/dhcp/dhcpd.conf` |
-| Internet drops on exam mode | dnsmasq uses `reload` not `restart` — check firewall.py |
+| DHCP fails after reboot | Add override.conf to isc-dhcp-server to wait for eno1 (Step 9) |
+| Custom block not working | Check dnsmasq uses `restart` not `reload` in custom_block.py |
+| Custom block slow to take effect | Kill All Internet → add block → Restore Internet |
 | Devices randomly lose internet | Check NIC: `ip -s link show eno1` — missed packets growing? |
 | DHCP packets dropped by NIC | Run `sudo ethtool -g eno1` — is RX at maximum? |
 | Missed packets keep climbing | NIC hardware is failing — replace the network card |
 | FORWARD chain wrong order | Run `sudo iptables-save -c` and verify EXAM_BLOCK is correct |
 | Windows domain login fails | Check DC rules in iptables and dnsmasq DC DNS entry (Step 11) |
+| Aspen portal not loading | Add `server=/aspen.cpsd.us/8.8.8.8` to dnsmasq.conf |
 | Server loses internet after days | Daily 4 AM reboot via cron handles this automatically |
 
 ---
@@ -911,6 +995,7 @@ Located in `dns/blocked_domains.conf`:
 ✅ Firewall routing and NAT working  
 ✅ DHCP assigning IPs to students (24 hour leases)  
 ✅ DHCP logging to `/var/log/dhcp.log`  
+✅ DHCP waits for eno1 before starting  
 ✅ DNS filtering working  
 ✅ DNS hijacking (students cannot bypass)  
 ✅ IPv6 bypass blocked  
@@ -921,6 +1006,7 @@ Located in `dns/blocked_domains.conf`:
 ✅ Apple iCloud Private Relay disabled  
 ✅ OpenDNS blocked  
 ✅ Windows domain login working (DC whitelisted)  
+✅ Aspen student portal working  
 ✅ systemd-resolved disabled (no port 53 conflict)  
 ✅ NIC ring buffer optimized  
 ✅ udev rule for consistent interface naming  
@@ -929,6 +1015,8 @@ Located in `dns/blocked_domains.conf`:
 ✅ EXAM_BLOCK chain connected  
 ✅ Flask dashboard with login  
 ✅ Quick Reference panel on dashboard  
+✅ Hostname sort (click column to sort 1→19)  
+✅ Custom website block from dashboard (instant, no restart)  
 ✅ Nginx + Gunicorn production setup  
 ✅ Teacher access via `http://YOUR_WAN_IP`  
 ✅ Analytics dashboard via `http://YOUR_WAN_IP:8080`  
@@ -949,7 +1037,7 @@ Located in `dns/blocked_domains.conf`:
 ✅ Auto-start on reboot  
 ✅ Server never sleeps  
 ✅ GitHub-managed block list  
-
+✅ Static WAN IP configured  
 
 ---
 

@@ -13,6 +13,7 @@ It works at the **network level**, so:
 - Students cannot bypass it using QUIC/HTTP3
 - Students cannot bypass it using VPN software
 - Apple iCloud Private Relay is disabled on the network
+- Blocked sites show a "BUSTED" warning page
 - Controlled entirely from a **web dashboard**
 
 ---
@@ -41,6 +42,7 @@ This firewall enforces rules **before traffic reaches the internet**.
 - Allows school domain controller access for Windows login
 - Blocks selected websites using dnsmasq DNS filtering
 - **Custom website blocking from dashboard** — block any site instantly
+- Shows "BUSTED" warning page when students visit blocked sites
 - Auto-resolves AI service IPs dynamically on exam start
 - Detects connected devices with IP, MAC, and hostname
 - Allows individual device blocking/unblocking (drops ALL traffic)
@@ -135,7 +137,8 @@ exam-firewall/
 │
 ├── static/
 │   ├── script.js
-│   └── style.css
+│   ├── style.css
+│   └── busted.html                ← Busted page shown to students
 │
 ├── templates/
 │   ├── index.html                 ← Main dashboard
@@ -614,11 +617,11 @@ sudo apt install nginx -y
 sudo nano /etc/nginx/sites-available/exam-dashboard
 ```
 
-Paste:
+Paste (replace `YOUR_WAN_IP` with your actual WAN IP):
 ```nginx
 server {
     listen 80;
-    server_name _;
+    server_name YOUR_WAN_IP;
     location / {
         proxy_pass http://127.0.0.1:5000;
         proxy_set_header Host $host;
@@ -637,16 +640,65 @@ sudo systemctl enable nginx
 
 ---
 
-### Step 20: Set Up Nginx (Analytics Dashboard)
+### Step 19b: Set Up Busted Page (Shown to Students on Blocked Sites)
+
 ```bash
-sudo nano /etc/nginx/sites-available/exam-analytics
+sudo mkdir -p /var/www/busted
+sudo cp ~/exam-firewall/static/busted.html /var/www/busted/index.html
+```
+
+Create SSL certificate:
+```bash
+sudo mkdir -p /etc/nginx/ssl
+sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/nginx/ssl/busted.key \
+  -out /etc/nginx/ssl/busted.crt \
+  -subj "/CN=192.168.50.1"
+```
+
+Create Nginx config:
+```bash
+sudo nano /etc/nginx/sites-available/busted
 ```
 
 Paste:
 ```nginx
 server {
+    listen 80;
+    listen 443 ssl;
+    server_name 192.168.50.1;
+    ssl_certificate /etc/nginx/ssl/busted.crt;
+    ssl_certificate_key /etc/nginx/ssl/busted.key;
+    root /var/www/busted;
+    index index.html;
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/busted /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+> ℹ️ Students visiting blocked sites will see a "BUSTED" warning page instead
+> of a generic connection error. HSTS-enabled sites (ChatGPT etc.) will show
+> a browser SSL warning instead — they are still blocked.
+
+---
+
+### Step 20: Set Up Nginx (Analytics Dashboard)
+```bash
+sudo nano /etc/nginx/sites-available/exam-analytics
+```
+
+Paste (replace `YOUR_WAN_IP` with your actual WAN IP):
+```nginx
+server {
     listen 8080;
-    server_name _;
+    server_name YOUR_WAN_IP;
     location / {
         proxy_pass http://127.0.0.1:5001;
         proxy_set_header Host $host;
@@ -855,7 +907,7 @@ This releases the old school network IP and gets a fresh `192.168.50.x` from the
 1. Go to dashboard → **Custom Website Block** section
 2. Type the domain (e.g. `nytimes.com`)
 3. Click **🚫 Block Site**
-4. Site is blocked within seconds
+4. Site is blocked within seconds — students see the BUSTED page
 
 ### To clear existing connections instantly:
 1. Click **⛔ Kill All Internet**
@@ -915,6 +967,7 @@ Located in `dns/blocked_domains.conf`:
 - 🔒 Enable / Disable Strict Mode (Classroom & Docs only)
 - 🌐 Custom Website Block — block any site instantly from dashboard
 - 🗑️ Clear All Custom Blocks — removes all custom blocks at once
+- 💀 Blocked sites show "BUSTED" warning page to students
 - 🔄 Auto-refreshes every 10 seconds with countdown timer
 - 📖 Quick Reference panel — explains each button
 - 📊 Separate analytics dashboard at port 8080
@@ -981,6 +1034,8 @@ Located in `dns/blocked_domains.conf`:
 | DHCP fails after reboot | Add override.conf to isc-dhcp-server to wait for eno1 (Step 9) |
 | Custom block not working | Check dnsmasq uses `restart` not `reload` in custom_block.py |
 | Custom block slow to take effect | Kill All Internet → add block → Restore Internet |
+| Busted page shows on teacher dashboard | Change `server_name` from `_` to `YOUR_WAN_IP` in exam-dashboard nginx config |
+| Blocked sites show SSL error not busted page | Normal for HSTS sites — students are still blocked |
 | Devices randomly lose internet | Check NIC: `ip -s link show eno1` — missed packets growing? |
 | DHCP packets dropped by NIC | Run `sudo ethtool -g eno1` — is RX at maximum? |
 | Missed packets keep climbing | NIC hardware is failing — replace the network card |
@@ -1017,6 +1072,7 @@ Located in `dns/blocked_domains.conf`:
 ✅ Quick Reference panel on dashboard  
 ✅ Hostname sort (click column to sort 1→19)  
 ✅ Custom website block from dashboard (instant, no restart)  
+✅ Busted page shown to students on blocked sites  
 ✅ Nginx + Gunicorn production setup  
 ✅ Teacher access via `http://YOUR_WAN_IP`  
 ✅ Analytics dashboard via `http://YOUR_WAN_IP:8080`  

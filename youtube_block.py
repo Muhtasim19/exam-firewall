@@ -3,17 +3,6 @@ import subprocess
 LAN_PREFIX = "192.168.50."
 YOUTUBE_CHAIN = "YOUTUBE_BLOCK"
 
-# YouTube-specific domains (safe to block without affecting Google services)
-YOUTUBE_DOMAINS = [
-    "youtube.com",
-    "www.youtube.com",
-    "youtu.be",
-    "googlevideo.com",
-    "ytimg.com",
-    "yt3.ggpht.com",
-    "youtube-nocookie.com",
-]
-
 def run(cmd):
     result = subprocess.run(
         f"sudo {cmd}",
@@ -27,15 +16,15 @@ def run_safe(cmd):
     subprocess.run(f"sudo {cmd}", shell=True)
 
 def ensure_youtube_chain():
-    chains = run("iptables -L")
-    if YOUTUBE_CHAIN not in chains:
-        run_safe(f"iptables -N {YOUTUBE_CHAIN}")
-        run_safe(f"iptables -A {YOUTUBE_CHAIN} -j RETURN")
+    # Check NAT table for chain (not filter table!)
+    nat_chains = run("iptables -t nat -L")
 
-    # Insert YOUTUBE_BLOCK chain into PREROUTING nat table
-    nat_rules = run("iptables -t nat -L PREROUTING -n")
-    if YOUTUBE_CHAIN not in nat_rules:
+    if YOUTUBE_CHAIN not in nat_chains:
         run_safe(f"iptables -t nat -N {YOUTUBE_CHAIN}")
+
+    # Attach to PREROUTING if not already there
+    prerouting = run("iptables -t nat -L PREROUTING -n")
+    if YOUTUBE_CHAIN not in prerouting:
         run_safe(f"iptables -t nat -A PREROUTING -i eno1 -j {YOUTUBE_CHAIN}")
 
 def block_youtube(ip):

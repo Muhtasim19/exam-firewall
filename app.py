@@ -5,6 +5,7 @@ from werkzeug.security import check_password_hash
 from time import time
 import firewall
 import custom_block
+import youtube_block
 import os
 
 # =========================
@@ -111,6 +112,11 @@ def index():
     devices = firewall.connected_devices()
     network_status = firewall.network_status()
     custom_blocked = custom_block.get_custom_blocked()
+    youtube_blocked_ips = youtube_block.get_youtube_blocked_ips()
+
+    # Add youtube_blocked flag to each device
+    for device in devices:
+        device["youtube_blocked"] = device["ip"] in youtube_blocked_ips
 
     return render_template(
         "index.html",
@@ -211,6 +217,21 @@ def custom_block_remove(domain):
 @login_required
 def custom_block_clear():
     custom_block.clear_all_custom_blocks()
+    return redirect(url_for("index"))
+
+# =========================
+# YOUTUBE BLOCK
+# =========================
+@app.route("/youtube/block/<ip>")
+@login_required
+def youtube_block_device(ip):
+    youtube_block.block_youtube(ip)
+    return redirect(url_for("index"))
+
+@app.route("/youtube/unblock/<ip>")
+@login_required
+def youtube_unblock_device(ip):
+    youtube_block.unblock_youtube(ip)
     return redirect(url_for("index"))
 
 # =========================

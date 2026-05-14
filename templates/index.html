@@ -5,134 +5,59 @@
     <title>Exam Firewall Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
-        /* Sortable Hostname Column */
-        .sort-header {
-            cursor: pointer;
-            user-select: none;
-            white-space: nowrap;
-        }
-        .sort-header:hover {
-            color: #4a6cf7;
-        }
-        .sort-arrow {
-            display: inline-block;
-            margin-left: 4px;
-            font-size: 11px;
-            color: #4a6cf7;
-        }
-
-        /* Quick Reference Panel */
-        .control-layout {
-            display: flex;
-            gap: 24px;
-            align-items: flex-start;
-        }
-
-        .control-left {
-            flex: 1;
-        }
-
-        .quick-ref {
-            width: 280px;
-            flex-shrink: 0;
-        }
-
+        .sort-header { cursor: pointer; user-select: none; white-space: nowrap; }
+        .sort-header:hover { color: #4a6cf7; }
+        .sort-arrow { display: inline-block; margin-left: 4px; font-size: 11px; color: #4a6cf7; }
+        .control-layout { display: flex; gap: 24px; align-items: flex-start; }
+        .control-left { flex: 1; }
+        .quick-ref { width: 280px; flex-shrink: 0; }
         .quick-ref-toggle {
-            background: #4a6cf7;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 10px 16px;
-            font-size: 14px;
-            cursor: pointer;
-            width: 100%;
-            text-align: left;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: #4a6cf7; color: white; border: none; border-radius: 8px;
+            padding: 10px 16px; font-size: 14px; cursor: pointer; width: 100%;
+            text-align: left; display: flex; justify-content: space-between;
+            align-items: center; font-family: 'Segoe UI', Tahoma, sans-serif;
         }
-
-        .quick-ref-toggle:hover {
-            background: #3554d1;
-        }
-
+        .quick-ref-toggle:hover { background: #3554d1; }
         .quick-ref-body {
-            display: none;
-            background: #f4f6fa;
-            border: 1px solid #e6e9f0;
-            border-radius: 8px;
-            margin-top: 8px;
-            padding: 16px;
-            font-size: 13px;
+            display: none; background: #f4f6fa; border: 1px solid #e6e9f0;
+            border-radius: 8px; margin-top: 8px; padding: 16px; font-size: 13px;
         }
+        .quick-ref-body.open { display: block; }
+        .ref-item { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #e6e9f0; }
+        .ref-item:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+        .ref-title { font-weight: bold; color: #2c3e50; margin-bottom: 4px; font-size: 13px; }
+        .ref-desc { color: #64748b; font-size: 12px; line-height: 1.5; }
+        @media (max-width: 900px) { .control-layout { flex-direction: column; } .quick-ref { width: 100%; } }
 
-        .quick-ref-body.open {
-            display: block;
+        /* YouTube button */
+        .yt-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: background 0.2s;
         }
-
-        .ref-item {
-            margin-bottom: 14px;
-            padding-bottom: 14px;
-            border-bottom: 1px solid #e6e9f0;
-        }
-
-        .ref-item:last-child {
-            margin-bottom: 0;
-            padding-bottom: 0;
-            border-bottom: none;
-        }
-
-        .ref-title {
-            font-weight: bold;
-            color: #2c3e50;
-            margin-bottom: 4px;
-            font-size: 13px;
-        }
-
-        .ref-desc {
-            color: #64748b;
-            font-size: 12px;
-            line-height: 1.5;
-        }
-
-        /* Responsive - stack on small screens */
-        @media (max-width: 900px) {
-            .control-layout {
-                flex-direction: column;
-            }
-            .quick-ref {
-                width: 100%;
-            }
-        }
+        .yt-btn:hover { background: #f0f0f0; }
+        .yt-btn-blocked { opacity: 0.4; }
     </style>
 </head>
-
 <body>
 
 <div style="text-align:right;">
-    <a href="{{ url_for('logout') }}" style="text-decoration:none;font-weight:bold;">
-        🔒 Logout
-    </a>
+    <a href="{{ url_for('logout') }}" style="text-decoration:none;font-weight:bold;">🔒 Logout</a>
 </div>
 
 <h1>Exam Firewall Dashboard</h1>
 
 <div class="section-box">
     <h2>Exam & Network Control</h2>
-
     <div class="control-layout">
-
-        <!-- Left: Controls -->
         <div class="control-left">
-
-            <p>
-                <strong>Exam Mode:</strong>
-                {% if exam_status == "active" %}
-                    <span style="color:green;font-weight:bold;">ACTIVE</span>
-                {% else %}
-                    <span style="color:red;font-weight:bold;">INACTIVE</span>
-                {% endif %}
+            <p><strong>Exam Mode:</strong>
+                {% if exam_status == "active" %}<span style="color:green;font-weight:bold;">ACTIVE</span>
+                {% else %}<span style="color:red;font-weight:bold;">INACTIVE</span>{% endif %}
             </p>
             <form action="{{ url_for('exam_on') }}" method="get" style="display:inline;">
                 <button type="submit">Enable Exam Mode</button>
@@ -143,181 +68,112 @@
 
             <hr style="margin: 20px 0; border: none; border-top: 1px solid #e6e9f0;">
 
-            <p>
-                <strong>Network Status:</strong>
-                {% if network_status == "killed" %}
-                    <span style="color:red;font-weight:bold;">⛔ ALL STUDENTS DISCONNECTED</span>
-                {% else %}
-                    <span style="color:green;font-weight:bold;">✅ Network Active</span>
-                {% endif %}
+            <p><strong>Network Status:</strong>
+                {% if network_status == "killed" %}<span style="color:red;font-weight:bold;">⛔ ALL STUDENTS DISCONNECTED</span>
+                {% else %}<span style="color:green;font-weight:bold;">✅ Network Active</span>{% endif %}
             </p>
             {% if network_status == "killed" %}
                 <form action="{{ url_for('network_restore') }}" method="get" style="display:inline;">
-                    <button type="submit" style="background-color:#27ae60;">
-                        ✅ Restore All Internet
-                    </button>
+                    <button type="submit" style="background-color:#27ae60;">✅ Restore All Internet</button>
                 </form>
             {% else %}
                 <form action="{{ url_for('network_kill') }}" method="get" style="display:inline;">
-                    <button type="submit" style="background-color:#e74c3c;">
-                        ⛔ Kill All Internet
-                    </button>
+                    <button type="submit" style="background-color:#e74c3c;">⛔ Kill All Internet</button>
                 </form>
             {% endif %}
 
             <hr style="margin: 20px 0; border: none; border-top: 1px solid #e6e9f0;">
 
-            <p>
-                <strong>Strict Mode:</strong>
-                {% if strict_status == "active" %}
-                    <span style="color:red;font-weight:bold;">🔒 ACTIVE — Classroom & Docs Only</span>
-                {% else %}
-                    <span style="color:green;font-weight:bold;">✅ Off</span>
-                {% endif %}
+            <p><strong>Strict Mode:</strong>
+                {% if strict_status == "active" %}<span style="color:red;font-weight:bold;">🔒 ACTIVE — Classroom & Docs Only</span>
+                {% else %}<span style="color:green;font-weight:bold;">✅ Off</span>{% endif %}
             </p>
             {% if strict_status == "active" %}
                 <form action="{{ url_for('strict_off') }}" method="get" style="display:inline;">
-                    <button type="submit" style="background-color:#27ae60;">
-                        ✅ Disable Strict Mode
-                    </button>
+                    <button type="submit" style="background-color:#27ae60;">✅ Disable Strict Mode</button>
                 </form>
             {% else %}
                 <form action="{{ url_for('strict_on') }}" method="get" style="display:inline;">
-                    <button type="submit" style="background-color:#e67e22;">
-                        🔒 Enable Strict Mode
-                    </button>
+                    <button type="submit" style="background-color:#e67e22;">🔒 Enable Strict Mode</button>
                 </form>
             {% endif %}
-
         </div>
 
-        <!-- Right: Collapsible Quick Reference -->
         <div class="quick-ref">
             <button class="quick-ref-toggle" onclick="toggleRef()">
-                <span>📖 Quick Reference</span>
-                <span id="arrow">▼</span>
+                <span>📖 Quick Reference</span><span id="arrow">▼</span>
             </button>
-
             <div class="quick-ref-body" id="quickRefBody">
-
                 <div class="ref-item">
                     <div class="ref-title">🔴 Exam Mode</div>
-                    <div class="ref-desc">
-                        Blocks AI tools (ChatGPT, Gemini, Claude etc.) using DNS filtering.
-                        Students cannot access blocked sites even if they change their DNS settings.
-                    </div>
+                    <div class="ref-desc">Blocks AI tools (ChatGPT, Gemini, Claude etc.) using DNS filtering. Students cannot bypass even by changing DNS settings.</div>
                 </div>
-
                 <div class="ref-item">
                     <div class="ref-title">⛔ Kill All Internet</div>
-                    <div class="ref-desc">
-                        Instantly cuts ALL internet access for every student on the network.
-                        Use in emergencies or at the start of an exam.
-                        Click Restore to bring everyone back online.
-                    </div>
+                    <div class="ref-desc">Instantly cuts ALL internet for every student. Click Restore to bring everyone back online.</div>
                 </div>
-
                 <div class="ref-item">
                     <div class="ref-title">🔒 Strict Mode</div>
-                    <div class="ref-desc">
-                        Allows ONLY Google Classroom and Google Docs.
-                        All other websites including social media and games are blocked.
-                        Use during open-book exams where only Classroom access is allowed.
-                    </div>
+                    <div class="ref-desc">Allows ONLY Google Classroom and Google Docs. All other sites blocked.</div>
                 </div>
-
                 <div class="ref-item">
                     <div class="ref-title">🚫 Block Device</div>
-                    <div class="ref-desc">
-                        Cuts internet for one specific student device only.
-                        Other students are not affected.
-                        Click Unblock to restore that device.
-                    </div>
+                    <div class="ref-desc">Cuts internet for one specific student only. Click Unblock to restore.</div>
                 </div>
-
+                <div class="ref-item">
+                    <div class="ref-title">📺 YouTube Block</div>
+                    <div class="ref-desc">Blocks YouTube for one specific student only. Google Classroom and Docs still work. Click again to unblock.</div>
+                </div>
                 <div class="ref-item">
                     <div class="ref-title">🔄 Refresh Devices</div>
-                    <div class="ref-desc">
-                        Scans the network for newly connected devices.
-                        Use if a student's device is not showing in the list.
-                    </div>
+                    <div class="ref-desc">Scans the network for newly connected devices.</div>
                 </div>
-
                 <div class="ref-item">
                     <div class="ref-title">📊 Analytics</div>
-                    <div class="ref-desc">
-                        View device history and blocked domain attempts at:<br>
-                        <strong>YOUR_WAN_IP:8080</strong>
-                    </div>
+                    <div class="ref-desc">View device history and blocked domain attempts at:<br><strong>YOUR_WAN_IP:8080</strong></div>
                 </div>
-
             </div>
         </div>
-
     </div>
 </div>
 
 <div class="section-box">
     <h2>🚫 Custom Website Block</h2>
-
     <form action="{{ url_for('custom_block_add') }}" method="post" style="display:flex; gap:10px; align-items:center; margin-bottom:20px;">
-        <input
-            type="text"
-            name="domain"
-            placeholder="e.g. nytimes.com"
-            required
-            style="padding:10px 14px; border:1px solid #e6e9f0; border-radius:8px; font-size:14px; width:280px;"
-        >
-        <button type="submit" style="background-color:#e74c3c;">
-            🚫 Block Site
-        </button>
+        <input type="text" name="domain" placeholder="e.g. nytimes.com" required
+            style="padding:10px 14px; border:1px solid #e6e9f0; border-radius:8px; font-size:14px; width:280px;">
+        <button type="submit" style="background-color:#e74c3c;">🚫 Block Site</button>
     </form>
 
     {% if custom_blocked %}
     <table>
-        <thead>
-            <tr>
-                <th>Blocked Domain</th>
-                <th>Action</th>
-            </tr>
-        </thead>
+        <thead><tr><th>Blocked Domain</th><th>Action</th></tr></thead>
         <tbody>
         {% for domain in custom_blocked %}
             <tr>
                 <td>{{ domain }}</td>
                 <td>
                     <form action="{{ url_for('custom_block_remove', domain=domain) }}" method="get" style="display:inline;">
-                        <button type="submit" style="background-color:#27ae60;">
-                            ✅ Unblock
-                        </button>
+                        <button type="submit" style="background-color:#27ae60;">✅ Unblock</button>
                     </form>
                 </td>
             </tr>
         {% endfor %}
         </tbody>
     </table>
-
     <form action="{{ url_for('custom_block_clear') }}" method="get" style="margin-top:15px;">
-        <button type="submit" style="background-color:#95a5a6;">
-            🗑️ Clear All Custom Blocks
-        </button>
+        <button type="submit" style="background-color:#95a5a6;">🗑️ Clear All Custom Blocks</button>
     </form>
-
     {% else %}
     <p style="color:#64748b; font-size:14px;">No custom blocks active. Type a domain above to block it instantly.</p>
     {% endif %}
-
 </div>
 
 <div class="section-box">
     <h2>Connected Devices</h2>
+    <button onclick="refreshDevices()" style="background-color:#4a6cf7; margin-bottom:15px;">🔄 Refresh Devices</button>
 
-    <!-- Refresh button preserves sort state -->
-    <button onclick="refreshDevices()" style="background-color:#4a6cf7; margin-bottom:15px;">
-        🔄 Refresh Devices
-    </button>
-
-    <table>
+    <table id="devices-table">
         <thead>
             <tr>
                 <th>IP Address</th>
@@ -326,9 +182,9 @@
                 <th>Network State</th>
                 <th>Firewall Status</th>
                 <th>Action</th>
+                <th title="Block/Unblock YouTube for this student">📺</th>
             </tr>
         </thead>
-
         <tbody id="devices-tbody">
         {% for d in devices %}
             <tr>
@@ -337,33 +193,35 @@
                 <td>{{ d.hostname }}</td>
                 <td>{{ d.state }}</td>
                 <td>
-                    {% if d.blocked %}
-                        <span style="color:red;font-weight:bold;">🚫 Blocked</span>
-                    {% else %}
-                        <span style="color:green;font-weight:bold;">✅ Allowed</span>
-                    {% endif %}
+                    {% if d.blocked %}<span style="color:red;font-weight:bold;">🚫 Blocked</span>
+                    {% else %}<span style="color:green;font-weight:bold;">✅ Allowed</span>{% endif %}
                 </td>
                 <td>
                     {% if d.blocked %}
                         <form action="{{ url_for('unblock_device', ip=d.ip) }}" method="get">
-                            <button type="submit" style="background-color:#27ae60;">
-                                ✅ Unblock
-                            </button>
+                            <button type="submit" style="background-color:#27ae60;">✅ Unblock</button>
                         </form>
                     {% else %}
                         <form action="{{ url_for('block_device', ip=d.ip) }}" method="get">
-                            <button type="submit" style="background-color:#e74c3c;">
-                                🚫 Block
-                            </button>
+                            <button type="submit" style="background-color:#e74c3c;">🚫 Block</button>
+                        </form>
+                    {% endif %}
+                </td>
+                <td style="text-align:center;">
+                    {% if d.youtube_blocked %}
+                        <form action="{{ url_for('youtube_unblock_device', ip=d.ip) }}" method="get" style="display:inline;">
+                            <button type="submit" class="yt-btn yt-btn-blocked" title="YouTube blocked — click to unblock">📺</button>
+                        </form>
+                    {% else %}
+                        <form action="{{ url_for('youtube_block_device', ip=d.ip) }}" method="get" style="display:inline;">
+                            <button type="submit" class="yt-btn" title="Click to block YouTube for this student">📺</button>
                         </form>
                     {% endif %}
                 </td>
             </tr>
         {% endfor %}
         </tbody>
-
     </table>
-
 </div>
 
 <script src="{{ url_for('static', filename='script.js') }}"></script>
@@ -376,14 +234,12 @@
         arrow.textContent = body.classList.contains('open') ? '▲' : '▼';
     }
 
-    // Refresh devices while preserving sort state
     function refreshDevices() {
         const hash = window.location.hash;
         window.location.href = "{{ url_for('refresh_devices') }}" + hash;
     }
 
-    // Hostname sort
-    let sortDirection = 1; // 1 = ascending, -1 = descending
+    let sortDirection = 1;
 
     function getHostnameNumber(hostname) {
         const match = hostname.match(/(\d+)$/);
@@ -413,24 +269,14 @@
 
     function sortByHostname() {
         applySortDirection(sortDirection);
-
-        // Save sort state to URL hash — persists through auto-refresh
         window.location.hash = sortDirection === 1 ? 'sort-asc' : 'sort-desc';
-
-        // Toggle direction for next click
         sortDirection *= -1;
     }
 
-    // Re-apply sort on page load if hash is set
     window.addEventListener('load', function() {
         const hash = window.location.hash;
-        if (hash === '#sort-asc') {
-            applySortDirection(1);
-            sortDirection = -1;
-        } else if (hash === '#sort-desc') {
-            applySortDirection(-1);
-            sortDirection = 1;
-        }
+        if (hash === '#sort-asc') { applySortDirection(1); sortDirection = -1; }
+        else if (hash === '#sort-desc') { applySortDirection(-1); sortDirection = 1; }
     });
 </script>
 

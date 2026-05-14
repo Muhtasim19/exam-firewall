@@ -28,7 +28,6 @@
         .ref-title { font-weight: bold; color: #2c3e50; margin-bottom: 4px; font-size: 13px; }
         .ref-desc { color: #64748b; font-size: 12px; line-height: 1.5; }
         @media (max-width: 900px) { .control-layout { flex-direction: column; } .quick-ref { width: 100%; } }
-
         /* YouTube button */
         .yt-btn {
             background: none;
@@ -44,13 +43,10 @@
     </style>
 </head>
 <body>
-
 <div style="text-align:right;">
     <a href="{{ url_for('logout') }}" style="text-decoration:none;font-weight:bold;">🔒 Logout</a>
 </div>
-
 <h1>Exam Firewall Dashboard</h1>
-
 <div class="section-box">
     <h2>Exam & Network Control</h2>
     <div class="control-layout">
@@ -65,9 +61,7 @@
             <form action="{{ url_for('exam_off') }}" method="get" style="display:inline;">
                 <button type="submit">Disable Exam Mode</button>
             </form>
-
             <hr style="margin: 20px 0; border: none; border-top: 1px solid #e6e9f0;">
-
             <p><strong>Network Status:</strong>
                 {% if network_status == "killed" %}<span style="color:red;font-weight:bold;">⛔ ALL STUDENTS DISCONNECTED</span>
                 {% else %}<span style="color:green;font-weight:bold;">✅ Network Active</span>{% endif %}
@@ -81,9 +75,7 @@
                     <button type="submit" style="background-color:#e74c3c;">⛔ Kill All Internet</button>
                 </form>
             {% endif %}
-
             <hr style="margin: 20px 0; border: none; border-top: 1px solid #e6e9f0;">
-
             <p><strong>Strict Mode:</strong>
                 {% if strict_status == "active" %}<span style="color:red;font-weight:bold;">🔒 ACTIVE — Classroom & Docs Only</span>
                 {% else %}<span style="color:green;font-weight:bold;">✅ Off</span>{% endif %}
@@ -98,7 +90,6 @@
                 </form>
             {% endif %}
         </div>
-
         <div class="quick-ref">
             <button class="quick-ref-toggle" onclick="toggleRef()">
                 <span>📖 Quick Reference</span><span id="arrow">▼</span>
@@ -136,7 +127,6 @@
         </div>
     </div>
 </div>
-
 <div class="section-box">
     <h2>🚫 Custom Website Block</h2>
     <form action="{{ url_for('custom_block_add') }}" method="post" style="display:flex; gap:10px; align-items:center; margin-bottom:20px;">
@@ -144,7 +134,6 @@
             style="padding:10px 14px; border:1px solid #e6e9f0; border-radius:8px; font-size:14px; width:280px;">
         <button type="submit" style="background-color:#e74c3c;">🚫 Block Site</button>
     </form>
-
     {% if custom_blocked %}
     <table>
         <thead><tr><th>Blocked Domain</th><th>Action</th></tr></thead>
@@ -168,11 +157,9 @@
     <p style="color:#64748b; font-size:14px;">No custom blocks active. Type a domain above to block it instantly.</p>
     {% endif %}
 </div>
-
 <div class="section-box">
     <h2>Connected Devices</h2>
     <button onclick="refreshDevices()" style="background-color:#4a6cf7; margin-bottom:15px;">🔄 Refresh Devices</button>
-
     <table id="devices-table">
         <thead>
             <tr>
@@ -209,13 +196,11 @@
                 </td>
                 <td style="text-align:center;">
                     {% if d.youtube_blocked %}
-                        <form action="{{ url_for('youtube_unblock_device', ip=d.ip) }}" method="get" style="display:inline;">
-                            <button type="submit" class="yt-btn yt-btn-blocked" title="YouTube blocked — click to unblock">📺</button>
-                        </form>
+                        <button onclick="youtubeAction('{{ url_for('youtube_unblock_device', ip=d.ip) }}')"
+                                class="yt-btn yt-btn-blocked" title="YouTube blocked — click to unblock">📺</button>
                     {% else %}
-                        <form action="{{ url_for('youtube_block_device', ip=d.ip) }}" method="get" style="display:inline;">
-                            <button type="submit" class="yt-btn" title="Click to block YouTube for this student">📺</button>
-                        </form>
+                        <button onclick="youtubeAction('{{ url_for('youtube_block_device', ip=d.ip) }}')"
+                                class="yt-btn" title="Click to block YouTube for this student">📺</button>
                     {% endif %}
                 </td>
             </tr>
@@ -223,9 +208,7 @@
         </tbody>
     </table>
 </div>
-
 <script src="{{ url_for('static', filename='script.js') }}"></script>
-
 <script>
     function toggleRef() {
         const body = document.getElementById('quickRefBody');
@@ -235,8 +218,12 @@
     }
 
     function refreshDevices() {
-        const hash = window.location.hash;
-        window.location.href = "{{ url_for('refresh_devices') }}" + hash;
+        window.location.href = "{{ url_for('refresh_devices') }}" + window.location.hash;
+    }
+
+    // YouTube action preserves sort hash
+    function youtubeAction(url) {
+        window.location.href = url + window.location.hash;
     }
 
     let sortDirection = 1;
@@ -250,19 +237,16 @@
         const tbody = document.getElementById('devices-tbody');
         const rows = Array.from(tbody.querySelectorAll('tr'));
         const arrow = document.getElementById('sort-arrow');
-
         rows.sort((a, b) => {
             const hostnameA = a.cells[2].textContent.trim().toLowerCase();
             const hostnameB = b.cells[2].textContent.trim().toLowerCase();
             const numA = getHostnameNumber(hostnameA);
             const numB = getHostnameNumber(hostnameB);
-
             if (numA !== 9999 && numB !== 9999) return (numA - numB) * dir;
             if (numA !== 9999) return -1 * dir;
             if (numB !== 9999) return 1 * dir;
             return hostnameA.localeCompare(hostnameB) * dir;
         });
-
         rows.forEach(row => tbody.appendChild(row));
         arrow.textContent = dir === 1 ? '↑' : '↓';
     }
@@ -273,12 +257,19 @@
         sortDirection *= -1;
     }
 
+    // On page load — default to ascending sort (1→20)
     window.addEventListener('load', function() {
         const hash = window.location.hash;
-        if (hash === '#sort-asc') { applySortDirection(1); sortDirection = -1; }
-        else if (hash === '#sort-desc') { applySortDirection(-1); sortDirection = 1; }
+        if (hash === '#sort-desc') {
+            applySortDirection(-1);
+            sortDirection = 1;
+        } else {
+            // Default: always sort ascending 1→20
+            applySortDirection(1);
+            sortDirection = -1;
+            window.location.hash = 'sort-asc';
+        }
     });
 </script>
-
 </body>
 </html>

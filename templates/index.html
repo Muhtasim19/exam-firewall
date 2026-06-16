@@ -108,8 +108,8 @@
                     <div class="ref-desc">Cuts internet for one specific student only. No confirmation needed — instant block.</div>
                 </div>
                 <div class="ref-item">
-                    <div class="ref-title">🔴 Block All CRL / ✅ Unblock All CRL</div>
-                    <div class="ref-desc">Block or unblock all CRL- devices at once. Requires confirmation.</div>
+                    <div class="ref-title">🔴 Block All / ✅ Unblock All</div>
+                    <div class="ref-desc">Block or unblock ALL connected devices at once. Requires confirmation.</div>
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">🗑️ Reset All Blocks</div>
@@ -155,7 +155,6 @@
         {% endfor %}
         </tbody>
     </table>
-    <!-- Issue 4: Confirmation on Clear All Custom Blocks -->
     <button onclick="confirmClearCustomBlocks()" style="background-color:#95a5a6; margin-top:15px;">
         🗑️ Clear All Custom Blocks
     </button>
@@ -166,14 +165,10 @@
 
 <div class="section-box">
     <h2>Connected Devices</h2>
-
-    <!-- Device controls row -->
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:15px; align-items:center;">
         <button onclick="refreshDevices()" style="background-color:#4a6cf7;">🔄 Refresh Devices</button>
-        <!-- Issue 5: Block/Unblock All CRL with confirmation -->
-        <button onclick="confirmBlockAllCRL()" style="background-color:#e74c3c;">🔴 Block All CRL</button>
-        <button onclick="confirmUnblockAllCRL()" style="background-color:#27ae60;">✅ Unblock All CRL</button>
-        <!-- Issue 1b: Reset All Blocks with confirmation -->
+        <button onclick="confirmBlockAll()" style="background-color:#e74c3c;">🔴 Block All Devices</button>
+        <button onclick="confirmUnblockAll()" style="background-color:#27ae60;">✅ Unblock All Devices</button>
         <button onclick="confirmResetAllBlocks()" style="background-color:#8e44ad;">🗑️ Reset All Blocks</button>
     </div>
 
@@ -200,7 +195,6 @@
                     {% if d.blocked %}<span style="color:red;font-weight:bold;">🚫 Blocked</span>
                     {% else %}<span style="color:green;font-weight:bold;">✅ Allowed</span>{% endif %}
                 </td>
-                <!-- Issue 2: No confirmation on block. Issue 3: AJAX no page reload -->
                 <td id="action-{{ d.ip | replace('.', '-') }}">
                     {% if d.blocked %}
                         <button onclick="toggleBlock('{{ d.ip }}', true)"
@@ -242,21 +236,15 @@
         window.location.href = url + window.location.hash;
     }
 
-    // Issue 3: AJAX block/unblock without page reload
     function toggleBlock(ip, isCurrentlyBlocked) {
         const safeId = ip.replace(/\./g, '-');
-        const url = isCurrentlyBlocked
-            ? `/device/unblock/${ip}`
-            : `/device/block/${ip}`;
+        const url = isCurrentlyBlocked ? `/device/unblock/${ip}` : `/device/block/${ip}`;
 
-        fetch(url, {
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        })
+        fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(r => r.json())
         .then(data => {
             const statusCell = document.getElementById(`status-${safeId}`);
             const actionCell = document.getElementById(`action-${safeId}`);
-
             if (data.status === 'blocked') {
                 statusCell.innerHTML = '<span style="color:red;font-weight:bold;">🚫 Blocked</span>';
                 actionCell.innerHTML = `<button onclick="toggleBlock('${ip}', true)" style="background-color:#27ae60;">✅ Unblock</button>`;
@@ -266,40 +254,34 @@
             }
         })
         .catch(() => {
-            // Fallback to page reload if AJAX fails
             window.location.href = (isCurrentlyBlocked ? `/device/unblock/${ip}` : `/device/block/${ip}`) + window.location.hash;
         });
     }
 
-    // Issue 4: Confirm clear custom blocks
     function confirmClearCustomBlocks() {
         if (confirm('ARE YOU SURE?\n\nThis will remove ALL custom website blocks.')) {
             window.location.href = "{{ url_for('custom_block_clear') }}";
         }
     }
 
-    // Issue 1b: Reset all blocks with confirmation
     function confirmResetAllBlocks() {
         if (confirm('ARE YOU SURE?\n\nThis will unblock ALL individual device blocks and YouTube blocks.\n\nExam Mode DNS blocking will NOT be affected.')) {
             window.location.href = "{{ url_for('reset_all_blocks') }}" + window.location.hash;
         }
     }
 
-    // Issue 5: Block all CRL with confirmation
-    function confirmBlockAllCRL() {
-        if (confirm('ARE YOU SURE?\n\nThis will block internet for ALL CRL- devices.')) {
+    function confirmBlockAll() {
+        if (confirm('ARE YOU SURE?\n\nThis will block internet for ALL connected devices.')) {
             window.location.href = "{{ url_for('block_all_crl') }}" + window.location.hash;
         }
     }
 
-    // Issue 5: Unblock all CRL with confirmation
-    function confirmUnblockAllCRL() {
-        if (confirm('ARE YOU SURE?\n\nThis will unblock internet for ALL CRL- devices.')) {
+    function confirmUnblockAll() {
+        if (confirm('ARE YOU SURE?\n\nThis will unblock internet for ALL connected devices.')) {
             window.location.href = "{{ url_for('unblock_all_crl') }}" + window.location.hash;
         }
     }
 
-    // Sort
     let sortDirection = 1;
 
     function getHostnameNumber(hostname) {

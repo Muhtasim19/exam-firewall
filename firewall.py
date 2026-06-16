@@ -179,11 +179,9 @@ def reset_all_blocks():
     except:
         pass
 
-    # Clear all device blocks from EXAM_BLOCK chain
     run_safe(f"iptables -F {EXAM_CHAIN}")
     run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
 
-    # Clear all YouTube blocks
     try:
         import youtube_block
         nat_output = run(f"iptables -t nat -L {youtube_block.YOUTUBE_CHAIN} -n")
@@ -200,22 +198,18 @@ def reset_all_blocks():
         pass
 
 
-def block_all_crl(devices):
-    """Block all devices with CRL- hostname"""
-    log("=== BLOCK ALL CRL DEVICES ===")
+def block_all_devices(devices):
+    """Block ALL connected devices"""
+    log("=== BLOCK ALL DEVICES ===")
     for device in devices:
-        hostname = device.get("hostname", "")
-        if hostname.lower().startswith("crl-"):
-            block_device(device["ip"])
+        block_device(device["ip"])
 
 
-def unblock_all_crl(devices):
-    """Unblock all devices with CRL- hostname"""
-    log("=== UNBLOCK ALL CRL DEVICES ===")
+def unblock_all_devices(devices):
+    """Unblock ALL connected devices"""
+    log("=== UNBLOCK ALL DEVICES ===")
     for device in devices:
-        hostname = device.get("hostname", "")
-        if hostname.lower().startswith("crl-"):
-            unblock_device(device["ip"])
+        unblock_device(device["ip"])
 
 
 def strict_mode_on():

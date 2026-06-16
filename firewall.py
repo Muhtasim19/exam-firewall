@@ -24,22 +24,19 @@ AI_DOMAINS = [
 ]
 
 WHITELIST_IPS = [
-    "172.25.205.59/32",    # CPSD Domain Controller 1
-    "172.25.205.123/32",   # CPSD Domain Controller 2
-    "142.251.45.0/24",     # Google Classroom
-    "142.251.211.0/24",    # Google Docs
-    "172.253.62.0/24",     # Google Accounts
-    "216.239.32.0/19",     # Google services
-    "64.233.160.0/19",     # Google services
-    "74.125.0.0/16",       # Google broadly
-    "172.217.0.0/16",      # Google broadly
+    "172.25.205.59/32",
+    "172.25.205.123/32",
+    "142.251.45.0/24",
+    "142.251.211.0/24",
+    "172.253.62.0/24",
+    "216.239.32.0/19",
+    "64.233.160.0/19",
+    "74.125.0.0/16",
+    "172.217.0.0/16",
 ]
 
 STRICT_DROP_COMMENT = "strict-mode"
 
-# ==========================
-# Logging Setup
-# ==========================
 logging.basicConfig(
     filename='/var/log/exam-firewall.log',
     level=logging.INFO,
@@ -50,10 +47,6 @@ def log(msg):
     logging.info(msg)
     print(msg)
 
-
-# ==========================
-# Utility
-# ==========================
 
 def run(cmd):
     result = subprocess.run(
@@ -69,10 +62,6 @@ def run_safe(cmd):
     subprocess.run(f"sudo {cmd}", shell=True)
 
 
-# ==========================
-# Firewall Setup
-# ==========================
-
 def ensure_chain():
     chains = run("iptables -L")
     if EXAM_CHAIN not in chains:
@@ -86,10 +75,6 @@ def ensure_chain():
     if EXAM_CHAIN not in forward_rules:
         run_safe(f"iptables -I FORWARD 1 -j {EXAM_CHAIN}")
 
-
-# ==========================
-# Auto IP Detection
-# ==========================
 
 def get_ai_ips():
     ip_ranges = set()
@@ -116,10 +101,6 @@ def get_ai_ips():
 
     return list(ip_ranges)
 
-
-# ==========================
-# Exam Mode
-# ==========================
 
 def exam_on():
     log("=== EXAM MODE ENABLED ===")
@@ -154,8 +135,16 @@ def exam_off():
     except:
         pass
 
+    # Save individual device blocks before flushing
+    device_blocks = get_blocked_ips()
+
+    # Flush chain then restore individual device blocks
     run_safe(f"iptables -F {EXAM_CHAIN}")
     run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
+
+    # Restore individual device blocks
+    for ip in device_blocks:
+        run_safe(f"iptables -I {EXAM_CHAIN} 1 -s {ip} -j DROP")
 
     run_safe(f"rm -f {DNS_BLOCK_FILE}")
     run_safe("systemctl restart dnsmasq")
@@ -181,9 +170,53 @@ def exam_status():
     return "inactive"
 
 
-# ==========================
-# Strict Mode
-# ==========================
+def reset_all_blocks():
+    """Reset ALL individual device blocks and YouTube blocks"""
+    log("=== RESET ALL BLOCKS ===")
+    try:
+        import analytics
+        analytics.log_mode_event("=== RESET ALL BLOCKS ===")
+    except:
+        pass
+
+    # Clear all device blocks from EXAM_BLOCK chain
+    run_safe(f"iptables -F {EXAM_CHAIN}")
+    run_safe(f"iptables -A {EXAM_CHAIN} -j RETURN")
+
+    # Clear all YouTube blocks
+    try:
+        import youtube_block
+        nat_output = run(f"iptables -t nat -L {youtube_block.YOUTUBE_CHAIN} -n")
+        ips_to_unblock = set()
+        for line in nat_output.splitlines():
+            if "5353" in line:
+                parts = line.split()
+                for part in parts:
+                    if part.startswith(LAN_PREFIX):
+                        ips_to_unblock.add(part)
+        for ip in ips_to_unblock:
+            youtube_block.unblock_youtube(ip)
+    except:
+        pass
+
+
+def block_all_crl(devices):
+    """Block all devices with CRL- hostname"""
+    log("=== BLOCK ALL CRL DEVICES ===")
+    for device in devices:
+        hostname = device.get("hostname", "")
+        if hostname.lower().startswith("crl-"):
+            block_device(device["ip"])
+
+
+def unblock_all_crl(devices):
+    """Unblock all devices with CRL- hostname"""
+    log("=== UNBLOCK ALL CRL DEVICES ===")
+    for device in devices:
+        hostname = device.get("hostname", "")
+        if hostname.lower().startswith("crl-"):
+            unblock_device(device["ip"])
+
 
 def strict_mode_on():
     log("=== STRICT MODE ENABLED ===")
@@ -200,10 +233,10 @@ def strict_mode_on():
         run_safe(f"cp {DNS_SOURCE_FILE} {DNS_BLOCK_FILE}")
     run_safe("systemctl restart dnsmasq")
 
-    for i, ip in enumerate():
+    for i, ip in enumerate(WHITELIST_IPS):
         run_safe(f"iptables -I FORWARD {i + 2} -i eno1 -d {ip} -j ACCEPT")
 
-    run_safe(f"iptables -I FORWARD {len() + 2} -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
+    run_safe(f"iptables -I FORWARD {len(WHITELIST_IPS) + 2} -i eno1 -o enp2s0 -m comment --comment '{STRICT_DROP_COMMENT}' -j DROP")
 
 
 def strict_mode_off():
@@ -236,10 +269,6 @@ def strict_status():
     return "active" if STRICT_DROP_COMMENT in output else "inactive"
 
 
-# ==========================
-# DHCP Hostname Detection
-# ==========================
-
 def get_dhcp_hostnames():
     hostnames = {}
 
@@ -270,10 +299,6 @@ def get_dhcp_hostnames():
 
     return hostnames
 
-
-# ==========================
-# Device Blocking
-# ==========================
 
 def block_device(ip):
     log(f"BLOCKING device: {ip}")
@@ -318,10 +343,6 @@ def get_blocked_ips():
     return blocked
 
 
-# ==========================
-# Device Detection
-# ==========================
-
 def connected_devices():
     devices = {}
     blocked_ips = get_blocked_ips()
@@ -350,13 +371,11 @@ def connected_devices():
                         "blocked": ip in blocked_ips
                     }
 
-    # Log to file
     log(f"--- Connected Devices ({len(devices)}) ---")
     for d in devices.values():
         status = "BLOCKED" if d["blocked"] else "ALLOWED"
         log(f"  {d['hostname']} | {d['ip']} | {d['state']} | {status}")
 
-    # Log to analytics database
     try:
         import analytics
         analytics.log_devices(list(devices.values()))
@@ -366,20 +385,12 @@ def connected_devices():
     return list(devices.values())
 
 
-# ==========================
-# Refresh Devices
-# ==========================
-
 def refresh_devices():
     log("=== MANUAL DEVICE REFRESH ===")
     run_safe("ip neigh flush dev eno1 nud failed")
     run_safe("ip neigh flush dev eno1 nud incomplete")
     run_safe("nmap -sn 192.168.50.0/24 --send-ip -T4")
 
-
-# ==========================
-# Kill Switch
-# ==========================
 
 def kill_network():
     log("=== KILL SWITCH ACTIVATED ===")
@@ -420,9 +431,6 @@ def network_status():
     return "active"
 
 
-# ==========================
-# Run once at startup
-# ==========================
 import sys
 if 'gunicorn' in sys.argv[0] or 'app' in sys.modules:
     log("=== EXAM FIREWALL STARTED ===")

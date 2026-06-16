@@ -188,14 +188,14 @@ def reset_all_blocks():
 @login_required
 def block_all_crl():
     devices = firewall.connected_devices()
-    firewall.block_all_crl(devices)
+    firewall.block_all_devices(devices)
     return redirect(url_for("index"))
 
 @app.route("/device/unblock_all_crl")
 @login_required
 def unblock_all_crl():
     devices = firewall.connected_devices()
-    firewall.unblock_all_crl(devices)
+    firewall.unblock_all_devices(devices)
     return redirect(url_for("index"))
 
 # =========================

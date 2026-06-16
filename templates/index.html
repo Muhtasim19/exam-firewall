@@ -28,15 +28,9 @@
         .ref-title { font-weight: bold; color: #2c3e50; margin-bottom: 4px; font-size: 13px; }
         .ref-desc { color: #64748b; font-size: 12px; line-height: 1.5; }
         @media (max-width: 900px) { .control-layout { flex-direction: column; } .quick-ref { width: 100%; } }
-        /* YouTube button */
         .yt-btn {
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 18px;
-            padding: 4px 8px;
-            border-radius: 6px;
-            transition: background 0.2s;
+            background: none; border: none; cursor: pointer; font-size: 18px;
+            padding: 4px 8px; border-radius: 6px; transition: background 0.2s;
         }
         .yt-btn:hover { background: #f0f0f0; }
         .yt-btn-blocked { opacity: 0.4; }
@@ -47,6 +41,7 @@
     <a href="{{ url_for('logout') }}" style="text-decoration:none;font-weight:bold;">🔒 Logout</a>
 </div>
 <h1>Exam Firewall Dashboard</h1>
+
 <div class="section-box">
     <h2>Exam & Network Control</h2>
     <div class="control-layout">
@@ -90,6 +85,7 @@
                 </form>
             {% endif %}
         </div>
+
         <div class="quick-ref">
             <button class="quick-ref-toggle" onclick="toggleRef()">
                 <span>📖 Quick Reference</span><span id="arrow">▼</span>
@@ -97,7 +93,7 @@
             <div class="quick-ref-body" id="quickRefBody">
                 <div class="ref-item">
                     <div class="ref-title">🔴 Exam Mode</div>
-                    <div class="ref-desc">Blocks AI tools (ChatGPT, Gemini, Claude etc.) using DNS filtering. Students cannot bypass even by changing DNS settings.</div>
+                    <div class="ref-desc">Blocks AI tools (ChatGPT, Gemini, Claude etc.) using DNS filtering. Individual device blocks are preserved when toggling Exam Mode.</div>
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">⛔ Kill All Internet</div>
@@ -109,11 +105,19 @@
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">🚫 Block Device</div>
-                    <div class="ref-desc">Cuts internet for one specific student only. Click Unblock to restore.</div>
+                    <div class="ref-desc">Cuts internet for one specific student only. No confirmation needed — instant block.</div>
+                </div>
+                <div class="ref-item">
+                    <div class="ref-title">🔴 Block All CRL / ✅ Unblock All CRL</div>
+                    <div class="ref-desc">Block or unblock all CRL- devices at once. Requires confirmation.</div>
+                </div>
+                <div class="ref-item">
+                    <div class="ref-title">🗑️ Reset All Blocks</div>
+                    <div class="ref-desc">Clears ALL individual device blocks and YouTube blocks at once. Requires confirmation.</div>
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">📺 YouTube Block</div>
-                    <div class="ref-desc">Blocks YouTube for one specific student only. Google Classroom and Docs still work. Click again to unblock.</div>
+                    <div class="ref-desc">Blocks YouTube for one specific student only. Google Classroom and Docs still work.</div>
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">🔄 Refresh Devices</div>
@@ -127,6 +131,7 @@
         </div>
     </div>
 </div>
+
 <div class="section-box">
     <h2>🚫 Custom Website Block</h2>
     <form action="{{ url_for('custom_block_add') }}" method="post" style="display:flex; gap:10px; align-items:center; margin-bottom:20px;">
@@ -150,16 +155,28 @@
         {% endfor %}
         </tbody>
     </table>
-    <form action="{{ url_for('custom_block_clear') }}" method="get" style="margin-top:15px;">
-        <button type="submit" style="background-color:#95a5a6;">🗑️ Clear All Custom Blocks</button>
-    </form>
+    <!-- Issue 4: Confirmation on Clear All Custom Blocks -->
+    <button onclick="confirmClearCustomBlocks()" style="background-color:#95a5a6; margin-top:15px;">
+        🗑️ Clear All Custom Blocks
+    </button>
     {% else %}
     <p style="color:#64748b; font-size:14px;">No custom blocks active. Type a domain above to block it instantly.</p>
     {% endif %}
 </div>
+
 <div class="section-box">
     <h2>Connected Devices</h2>
-    <button onclick="refreshDevices()" style="background-color:#4a6cf7; margin-bottom:15px;">🔄 Refresh Devices</button>
+
+    <!-- Device controls row -->
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:15px; align-items:center;">
+        <button onclick="refreshDevices()" style="background-color:#4a6cf7;">🔄 Refresh Devices</button>
+        <!-- Issue 5: Block/Unblock All CRL with confirmation -->
+        <button onclick="confirmBlockAllCRL()" style="background-color:#e74c3c;">🔴 Block All CRL</button>
+        <button onclick="confirmUnblockAllCRL()" style="background-color:#27ae60;">✅ Unblock All CRL</button>
+        <!-- Issue 1b: Reset All Blocks with confirmation -->
+        <button onclick="confirmResetAllBlocks()" style="background-color:#8e44ad;">🗑️ Reset All Blocks</button>
+    </div>
+
     <table id="devices-table">
         <thead>
             <tr>
@@ -174,24 +191,23 @@
         </thead>
         <tbody id="devices-tbody">
         {% for d in devices %}
-            <tr>
+            <tr id="row-{{ d.ip | replace('.', '-') }}">
                 <td>{{ d.ip }}</td>
                 <td>{{ d.mac }}</td>
                 <td>{{ d.hostname }}</td>
                 <td>{{ d.state }}</td>
-                <td>
+                <td id="status-{{ d.ip | replace('.', '-') }}">
                     {% if d.blocked %}<span style="color:red;font-weight:bold;">🚫 Blocked</span>
                     {% else %}<span style="color:green;font-weight:bold;">✅ Allowed</span>{% endif %}
                 </td>
-                <td>
+                <!-- Issue 2: No confirmation on block. Issue 3: AJAX no page reload -->
+                <td id="action-{{ d.ip | replace('.', '-') }}">
                     {% if d.blocked %}
-                        <form action="{{ url_for('unblock_device', ip=d.ip) }}" method="get">
-                            <button type="submit" style="background-color:#27ae60;">✅ Unblock</button>
-                        </form>
+                        <button onclick="toggleBlock('{{ d.ip }}', true)"
+                                style="background-color:#27ae60;">✅ Unblock</button>
                     {% else %}
-                        <form action="{{ url_for('block_device', ip=d.ip) }}" method="get">
-                            <button type="submit" style="background-color:#e74c3c;">🚫 Block</button>
-                        </form>
+                        <button onclick="toggleBlock('{{ d.ip }}', false)"
+                                style="background-color:#e74c3c;">🚫 Block</button>
                     {% endif %}
                 </td>
                 <td style="text-align:center;">
@@ -208,6 +224,7 @@
         </tbody>
     </table>
 </div>
+
 <script src="{{ url_for('static', filename='script.js') }}"></script>
 <script>
     function toggleRef() {
@@ -221,11 +238,68 @@
         window.location.href = "{{ url_for('refresh_devices') }}" + window.location.hash;
     }
 
-    // YouTube action preserves sort hash
     function youtubeAction(url) {
         window.location.href = url + window.location.hash;
     }
 
+    // Issue 3: AJAX block/unblock without page reload
+    function toggleBlock(ip, isCurrentlyBlocked) {
+        const safeId = ip.replace(/\./g, '-');
+        const url = isCurrentlyBlocked
+            ? `/device/unblock/${ip}`
+            : `/device/block/${ip}`;
+
+        fetch(url, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(r => r.json())
+        .then(data => {
+            const statusCell = document.getElementById(`status-${safeId}`);
+            const actionCell = document.getElementById(`action-${safeId}`);
+
+            if (data.status === 'blocked') {
+                statusCell.innerHTML = '<span style="color:red;font-weight:bold;">🚫 Blocked</span>';
+                actionCell.innerHTML = `<button onclick="toggleBlock('${ip}', true)" style="background-color:#27ae60;">✅ Unblock</button>`;
+            } else {
+                statusCell.innerHTML = '<span style="color:green;font-weight:bold;">✅ Allowed</span>';
+                actionCell.innerHTML = `<button onclick="toggleBlock('${ip}', false)" style="background-color:#e74c3c;">🚫 Block</button>`;
+            }
+        })
+        .catch(() => {
+            // Fallback to page reload if AJAX fails
+            window.location.href = (isCurrentlyBlocked ? `/device/unblock/${ip}` : `/device/block/${ip}`) + window.location.hash;
+        });
+    }
+
+    // Issue 4: Confirm clear custom blocks
+    function confirmClearCustomBlocks() {
+        if (confirm('ARE YOU SURE?\n\nThis will remove ALL custom website blocks.')) {
+            window.location.href = "{{ url_for('custom_block_clear') }}";
+        }
+    }
+
+    // Issue 1b: Reset all blocks with confirmation
+    function confirmResetAllBlocks() {
+        if (confirm('ARE YOU SURE?\n\nThis will unblock ALL individual device blocks and YouTube blocks.\n\nExam Mode DNS blocking will NOT be affected.')) {
+            window.location.href = "{{ url_for('reset_all_blocks') }}" + window.location.hash;
+        }
+    }
+
+    // Issue 5: Block all CRL with confirmation
+    function confirmBlockAllCRL() {
+        if (confirm('ARE YOU SURE?\n\nThis will block internet for ALL CRL- devices.')) {
+            window.location.href = "{{ url_for('block_all_crl') }}" + window.location.hash;
+        }
+    }
+
+    // Issue 5: Unblock all CRL with confirmation
+    function confirmUnblockAllCRL() {
+        if (confirm('ARE YOU SURE?\n\nThis will unblock internet for ALL CRL- devices.')) {
+            window.location.href = "{{ url_for('unblock_all_crl') }}" + window.location.hash;
+        }
+    }
+
+    // Sort
     let sortDirection = 1;
 
     function getHostnameNumber(hostname) {
@@ -257,14 +331,12 @@
         sortDirection *= -1;
     }
 
-    // On page load — default to ascending sort (1→20)
     window.addEventListener('load', function() {
         const hash = window.location.hash;
         if (hash === '#sort-desc') {
             applySortDirection(-1);
             sortDirection = 1;
         } else {
-            // Default: always sort ascending 1→20
             applySortDirection(1);
             sortDirection = -1;
             window.location.hash = 'sort-asc';

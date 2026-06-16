@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, url_for, request, session
+from flask import Flask, render_template, redirect, url_for, request, session, jsonify
 from functools import wraps
 from datetime import timedelta
 from werkzeug.security import check_password_hash
@@ -13,8 +13,6 @@ import os
 # =========================
 app = Flask(__name__)
 app.secret_key = "3f8x92Kk29dk29s0dkX"
-
-# Session timeout (10 min inactivity)
 app.permanent_session_lifetime = timedelta(minutes=10)
 
 # =========================
@@ -30,7 +28,7 @@ ADMIN_PASSWORD_HASH = os.environ.get(
 # =========================
 FAILED_LOGINS = {}
 MAX_ATTEMPTS = 5
-LOCKOUT_TIME = 300  # 5 minutes
+LOCKOUT_TIME = 300
 
 # =========================
 # DISABLE BROWSER CACHING
@@ -68,7 +66,6 @@ def refresh_session():
 def login():
     client_ip = request.remote_addr
 
-    # Check lockout
     if client_ip in FAILED_LOGINS:
         attempts, last_attempt = FAILED_LOGINS[client_ip]
         if attempts >= MAX_ATTEMPTS:
@@ -114,7 +111,6 @@ def index():
     custom_blocked = custom_block.get_custom_blocked()
     youtube_blocked_ips = youtube_block.get_youtube_blocked_ips()
 
-    # Add youtube_blocked flag to each device
     for device in devices:
         device["youtube_blocked"] = device["ip"] in youtube_blocked_ips
 
@@ -148,13 +144,13 @@ def exam_off():
 @app.route("/strict/on")
 @login_required
 def strict_on():
-    firewall.strict_on()
+    firewall.strict_mode_on()
     return redirect(url_for("index"))
 
 @app.route("/strict/off")
 @login_required
 def strict_off():
-    firewall.strict_off()
+    firewall.strict_mode_off()
     return redirect(url_for("index"))
 
 # =========================
@@ -164,12 +160,42 @@ def strict_off():
 @login_required
 def block_device(ip):
     firewall.block_device(ip)
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"status": "blocked", "ip": ip})
     return redirect(url_for("index"))
 
 @app.route("/device/unblock/<ip>")
 @login_required
 def unblock_device(ip):
     firewall.unblock_device(ip)
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"status": "unblocked", "ip": ip})
+    return redirect(url_for("index"))
+
+# =========================
+# RESET ALL BLOCKS
+# =========================
+@app.route("/device/reset_all")
+@login_required
+def reset_all_blocks():
+    firewall.reset_all_blocks()
+    return redirect(url_for("index"))
+
+# =========================
+# BLOCK / UNBLOCK ALL CRL
+# =========================
+@app.route("/device/block_all_crl")
+@login_required
+def block_all_crl():
+    devices = firewall.connected_devices()
+    firewall.block_all_crl(devices)
+    return redirect(url_for("index"))
+
+@app.route("/device/unblock_all_crl")
+@login_required
+def unblock_all_crl():
+    devices = firewall.connected_devices()
+    firewall.unblock_all_crl(devices)
     return redirect(url_for("index"))
 
 # =========================

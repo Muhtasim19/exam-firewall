@@ -205,6 +205,15 @@ def block_all_devices(devices):
         block_device(device["ip"])
 
 
+def block_crl_only(devices):
+    """Block only devices with CRL- hostname"""
+    log("=== BLOCK CRL ONLY ===")
+    for device in devices:
+        hostname = device.get("hostname", "")
+        if hostname.lower().startswith("crl-"):
+            block_device(device["ip"])
+
+
 def unblock_all_devices(devices):
     """Unblock ALL connected devices"""
     log("=== UNBLOCK ALL DEVICES ===")

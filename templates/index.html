@@ -168,6 +168,7 @@
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:15px; align-items:center;">
         <button onclick="refreshDevices()" style="background-color:#4a6cf7;">🔄 Refresh Devices</button>
         <button onclick="confirmBlockAll()" style="background-color:#e74c3c;">🔴 Block All Devices</button>
+        <button onclick="confirmBlockCRLOnly()" style="background-color:#d35400;">🟠 Block CRL Only</button>
         <button onclick="confirmUnblockAll()" style="background-color:#27ae60;">✅ Unblock All Devices</button>
         <button onclick="confirmResetAllBlocks()" style="background-color:#8e44ad;">🗑️ Reset All Blocks</button>
     </div>
@@ -273,6 +274,12 @@
     function confirmBlockAll() {
         if (confirm('ARE YOU SURE?\n\nThis will block internet for ALL connected devices.')) {
             window.location.href = "{{ url_for('block_all_crl') }}" + window.location.hash;
+        }
+    }
+
+    function confirmBlockCRLOnly() {
+        if (confirm('ARE YOU SURE?\n\nThis will block internet ONLY for devices with hostname starting with CRL- (other devices like routers will not be affected).')) {
+            window.location.href = "{{ url_for('block_crl_only') }}" + window.location.hash;
         }
     }
 

@@ -795,6 +795,22 @@ setInterval(tickCountdown, 1000);
 
 // Full page refresh every 60s
 setTimeout(() => window.location.reload(), 60000);
+
+// Sort devices table by hostname (ascending) on load
+(function() {
+    const tables = document.querySelectorAll('.table tbody');
+    tables.forEach(tbody => {
+        const firstRow = tbody.querySelector('tr td:first-child strong');
+        if (!firstRow) return;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+            const aText = (a.querySelector('td:first-child strong') || a.querySelector('td:first-child')).textContent.trim().toLowerCase();
+            const bText = (b.querySelector('td:first-child strong') || b.querySelector('td:first-child')).textContent.trim().toLowerCase();
+            return aText.localeCompare(bText, undefined, {numeric: true, sensitivity: 'base'});
+        });
+        rows.forEach(r => tbody.appendChild(r));
+    });
+})();
 </script>
 
 </body>

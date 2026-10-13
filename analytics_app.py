@@ -1,4 +1,4 @@
-from flask import Flask, render_template, redirect, url_for, request, session
+from flask import Flask, render_template, redirect, url_for, request, session, jsonify
 from functools import wraps
 from datetime import timedelta
 from werkzeug.security import check_password_hash
@@ -90,6 +90,9 @@ def index():
     # Get current activity for all devices
     all_activity = live_monitor.get_all_devices_activity()
 
+    # Get live blocked attempts from DNS log (works without exam mode)
+    live_blocked_attempts = live_monitor.get_blocked_attempts(minutes=60, limit=200)
+
     return render_template(
         "analytics.html",
         devices=devices,
@@ -101,7 +104,8 @@ def index():
         top_domains=top_domains,
         blocked_by_device=blocked_by_device,
         total_blocked=total_blocked,
-        all_activity=all_activity
+        all_activity=all_activity,
+        live_blocked_attempts=live_blocked_attempts
     )
 
 @app.route("/device/<ip>")
@@ -109,12 +113,24 @@ def index():
 def device_detail(ip):
     timeline = analytics.get_device_timeline(ip)
     dns_attempts = [d for d in dns_parser.get_blocked_domains() if d['ip'] == ip]
+    # Also get live DNS-based blocked attempts for this device
+    live_attempts = [a for a in live_monitor.get_blocked_attempts(minutes=60, limit=200) if a['ip'] == ip]
     return render_template(
         "analytics_device.html",
         ip=ip,
         timeline=timeline,
-        dns_attempts=dns_attempts
+        dns_attempts=dns_attempts,
+        live_attempts=live_attempts
     )
+
+# =========================
+# API: Live blocked attempts (AJAX polling)
+# =========================
+@app.route("/api/blocked-attempts")
+@login_required
+def api_blocked_attempts():
+    attempts = live_monitor.get_blocked_attempts(minutes=60, limit=200)
+    return jsonify(attempts)
 
 # =========================
 # LIVE MONITOR

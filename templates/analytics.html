@@ -161,9 +161,9 @@
             margin-bottom: 24px;
         }
 
-        .grid-equal {
+        .grid-3 {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 16px;
             margin-bottom: 24px;
         }
@@ -205,29 +205,6 @@
             padding: 3px 10px;
             border-radius: 20px;
         }
-
-        .refresh-badge {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 10px;
-            color: var(--green);
-        }
-
-        .refresh-dot {
-            width: 5px;
-            height: 5px;
-            background: var(--green);
-            border-radius: 50%;
-            animation: pulse 1.5s infinite;
-        }
-
-        /* New row flash animation */
-        @keyframes flashNew {
-            0% { background: rgba(255,68,68,0.2); }
-            100% { background: transparent; }
-        }
-        .row-new td { animation: flashNew 1.5s ease-out forwards; }
 
         .table { width: 100%; border-collapse: collapse; }
 
@@ -436,8 +413,8 @@
         </div>
         <div class="stat-card purple">
             <div class="stat-label">Blocked Attempts</div>
-            <div class="stat-value" id="stat-blocked">{{ live_blocked_attempts|length }}</div>
-            <div class="stat-sub">last 60 min • live</div>
+            <div class="stat-value">{{ total_blocked }}</div>
+            <div class="stat-sub">blocked domain queries</div>
         </div>
         <div class="stat-card orange">
             <div class="stat-label">RAM Usage</div>
@@ -499,52 +476,8 @@
         </div>
     </div>
 
-    <!-- ===== LIVE BLOCKED ATTEMPTS BOX ===== -->
-    <div class="card full-width">
-        <div class="card-header">
-            <div class="card-title red">🚫 Blocked Attempts — Live (Last 60 min)</div>
-            <div style="display:flex; align-items:center; gap:12px;">
-                <div class="refresh-badge">
-                    <div class="refresh-dot"></div>
-                    <span id="refresh-countdown">Updates in 10s</span>
-                </div>
-                <div class="card-count" id="attempts-count">{{ live_blocked_attempts|length }}</div>
-            </div>
-        </div>
-        <div class="scrollable" style="max-height:380px;">
-            <table class="table" id="attempts-table">
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Hostname</th>
-                        <th>IP</th>
-                        <th>Blocked Domain</th>
-                    </tr>
-                </thead>
-                <tbody id="attempts-tbody">
-                {% if live_blocked_attempts %}
-                    {% for a in live_blocked_attempts %}
-                    <tr>
-                        <td class="mono">{{ a.time }}</td>
-                        <td><strong>{{ a.hostname }}</strong></td>
-                        <td class="mono">{{ a.ip }}</td>
-                        <td><span class="badge badge-red">🚫 {{ a.domain }}</span></td>
-                    </tr>
-                    {% endfor %}
-                {% else %}
-                    <tr id="empty-row">
-                        <td colspan="4" style="padding:40px; text-align:center; color:var(--muted); font-size:12px;">
-                            No blocked attempts in the last 60 minutes
-                        </td>
-                    </tr>
-                {% endif %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-
     <!-- Blocked by Device + Mode Events -->
-    <div class="grid-equal">
+    <div class="grid-2">
 
         <!-- Blocked Attempts by Device -->
         <div class="card">
@@ -660,42 +593,6 @@
         </div>
     </div>
 
-    <!-- Blocked Domain Log (static, from DNS log) -->
-    <div class="card full-width">
-        <div class="card-header">
-            <div class="card-title red">🚫 Blocked Domain Attempts — DNS Log</div>
-            <div class="card-count">{{ blocked_domains|length }} attempts</div>
-        </div>
-        <div class="scrollable">
-            {% if blocked_domains %}
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Device</th>
-                        <th>IP</th>
-                        <th>Blocked Domain</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for d in blocked_domains %}
-                    <tr>
-                        <td class="mono">{{ d.timestamp[11:16] }}</td>
-                        <td><strong>{{ d.hostname }}</strong></td>
-                        <td class="mono">{{ d.ip }}</td>
-                        <td>
-                            <span class="badge badge-red">🚫 {{ d.domain }}</span>
-                        </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <div class="empty">No blocked attempts yet</div>
-            {% endif %}
-        </div>
-    </div>
-
     <!-- Connected Devices -->
     <div class="card full-width">
         <div class="card-header">
@@ -802,69 +699,12 @@
 
 </div>
 
-<div class="refresh-info">Page auto-refreshes every 60s • Block log updates every 10s • Data kept for 24 hours</div>
+<div class="refresh-info">Auto-refreshes every 60 seconds • Data kept for 24 hours</div>
 
 <script>
-// ===== Live blocked attempts polling =====
-let lastAttemptKey = null;
-let countdown = 10;
+setTimeout(() => window.location.reload(), 60000);
 
-function buildKey(data) {
-    if (!data || data.length === 0) return "";
-    return data[0].time + "|" + data[0].ip + "|" + data[0].domain;
-}
-
-function renderAttempts(data) {
-    const tbody = document.getElementById("attempts-tbody");
-    const countEl = document.getElementById("attempts-count");
-    const statEl = document.getElementById("stat-blocked");
-
-    if (!data || data.length === 0) {
-        tbody.innerHTML = `<tr id="empty-row"><td colspan="4" style="padding:40px; text-align:center; color:var(--muted); font-size:12px;">No blocked attempts in the last 60 minutes</td></tr>`;
-        countEl.textContent = "0";
-        if (statEl) statEl.textContent = "0";
-        return;
-    }
-
-    const newKey = buildKey(data);
-    const isNew = newKey !== lastAttemptKey;
-    lastAttemptKey = newKey;
-
-    let html = "";
-    data.forEach((a, i) => {
-        const rowClass = (isNew && i === 0) ? ' class="row-new"' : '';
-        html += `<tr${rowClass}>
-            <td class="mono">${a.time}</td>
-            <td><strong>${a.hostname}</strong></td>
-            <td class="mono">${a.ip}</td>
-            <td><span class="badge badge-red">🚫 ${a.domain}</span></td>
-        </tr>`;
-    });
-    tbody.innerHTML = html;
-    countEl.textContent = data.length;
-    if (statEl) statEl.textContent = data.length;
-}
-
-function fetchAttempts() {
-    fetch("/api/blocked-attempts")
-        .then(r => r.json())
-        .then(data => renderAttempts(data))
-        .catch(() => {});
-}
-
-// Countdown timer
-function tickCountdown() {
-    countdown--;
-    const el = document.getElementById("refresh-countdown");
-    if (el) el.textContent = `Updates in ${countdown}s`;
-    if (countdown <= 0) {
-        countdown = 10;
-        fetchAttempts();
-    }
-}
-setInterval(tickCountdown, 1000);
-
-// Server stats (RAM / Disk / Uptime)
+// Server stats — fetch on load and every 30s
 function fetchServerStats() {
     fetch('/api/server-stats')
         .then(r => r.json())
@@ -875,20 +715,24 @@ function fetchServerStats() {
             document.getElementById('stat-disk-pct').textContent = d.disk_pct + '%';
             document.getElementById('stat-disk-sub').textContent =
                 d.disk_used_gb + ' / ' + d.disk_total_gb + ' GB  •  up ' + d.uptime;
+
+            // Color RAM card red if >85%
             const ramCard = document.getElementById('stat-ram-pct').closest('.stat-card');
-            if (d.ram_pct > 85) ramCard.style.setProperty('--accent2', '#ff4444');
+            if (d.ram_pct > 85) {
+                ramCard.style.setProperty('--accent2', '#ff4444');
+            }
+            // Color disk card red if >90%
             const diskCard = document.getElementById('stat-disk-pct').closest('.stat-card');
-            if (d.disk_pct > 90) diskCard.style.setProperty('--yellow', '#ff4444');
+            if (d.disk_pct > 90) {
+                diskCard.style.setProperty('--yellow', '#ff4444');
+            }
         })
         .catch(() => {});
 }
 fetchServerStats();
 setInterval(fetchServerStats, 30000);
 
-// Full page refresh every 60s
-setTimeout(() => window.location.reload(), 60000);
-
-// Sort devices table by hostname on load
+// Sort devices table by hostname (numeric-aware)
 (function() {
     const tables = document.querySelectorAll('.table tbody');
     tables.forEach(tbody => {

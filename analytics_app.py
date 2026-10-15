@@ -1,6 +1,6 @@
 from flask import Flask, render_template, redirect, url_for, request, session, jsonify
 from functools import wraps
-from datetime import timedelta
+from datetime import timedelta, datetime
 from werkzeug.security import check_password_hash
 from time import time
 import analytics
@@ -113,7 +113,6 @@ def index():
 def device_detail(ip):
     timeline = analytics.get_device_timeline(ip)
     dns_attempts = [d for d in dns_parser.get_blocked_domains() if d['ip'] == ip]
-    # Also get live DNS-based blocked attempts for this device
     live_attempts = [a for a in live_monitor.get_blocked_attempts(minutes=60, limit=200) if a['ip'] == ip]
     return render_template(
         "analytics_device.html",
@@ -133,12 +132,74 @@ def api_blocked_attempts():
     return jsonify(attempts)
 
 # =========================
+# SERVER STATS API
+# =========================
+@app.route("/api/server-stats")
+@login_required
+def api_server_stats():
+    stats = {}
+
+    # RAM usage from /proc/meminfo
+    try:
+        with open("/proc/meminfo") as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    meminfo[parts[0].rstrip(":")] = int(parts[1])
+        total = meminfo.get("MemTotal", 0)
+        available = meminfo.get("MemAvailable", 0)
+        used = total - available
+        stats["ram_used_gb"] = round(used / 1024 / 1024, 1)
+        stats["ram_total_gb"] = round(total / 1024 / 1024, 1)
+        stats["ram_pct"] = round(used / total * 100) if total else 0
+    except:
+        stats["ram_used_gb"] = 0
+        stats["ram_total_gb"] = 0
+        stats["ram_pct"] = 0
+
+    # Disk usage
+    try:
+        st = os.statvfs("/")
+        total = st.f_blocks * st.f_frsize
+        free = st.f_bavail * st.f_frsize
+        used = total - free
+        stats["disk_used_gb"] = round(used / 1024 / 1024 / 1024, 1)
+        stats["disk_total_gb"] = round(total / 1024 / 1024 / 1024, 1)
+        stats["disk_pct"] = round(used / total * 100) if total else 0
+    except:
+        stats["disk_used_gb"] = 0
+        stats["disk_total_gb"] = 0
+        stats["disk_pct"] = 0
+
+    # Uptime / last boot
+    try:
+        with open("/proc/uptime") as f:
+            uptime_seconds = float(f.read().split()[0])
+        days = int(uptime_seconds // 86400)
+        hours = int((uptime_seconds % 86400) // 3600)
+        if days > 0:
+            stats["uptime"] = f"{days}d {hours}h"
+        else:
+            stats["uptime"] = f"{hours}h {int((uptime_seconds % 3600) // 60)}m"
+    except:
+        stats["uptime"] = "unknown"
+
+    # CPU load (1-min average)
+    try:
+        with open("/proc/loadavg") as f:
+            stats["cpu_load"] = f.read().split()[0]
+    except:
+        stats["cpu_load"] = "0"
+
+    return jsonify(stats)
+
+# =========================
 # LIVE MONITOR
 # =========================
 @app.route("/live/<ip>")
 @login_required
 def live(ip):
-    # Get hostname from analytics
     devices = analytics.get_device_summary()
     hostname = "Unknown"
     for d in devices:

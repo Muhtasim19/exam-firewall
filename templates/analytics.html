@@ -631,42 +631,6 @@
 
     </div>
 
-    <!-- Live Blocked Domain Log -->
-    <div class="card full-width">
-        <div class="card-header">
-            <div class="card-title red">📋 Blocked Domain Attempts — Today</div>
-            <div class="card-count">{{ blocked_domains|length }} attempts</div>
-        </div>
-        <div class="scrollable">
-            {% if blocked_domains %}
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Device</th>
-                        <th>IP</th>
-                        <th>Blocked Domain</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for d in blocked_domains %}
-                    <tr>
-                        <td class="mono">{{ d.timestamp[11:16] }}</td>
-                        <td><strong>{{ d.hostname }}</strong></td>
-                        <td class="mono">{{ d.ip }}</td>
-                        <td>
-                            <span class="badge badge-red">🚫 {{ d.domain }}</span>
-                        </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <div class="empty">No blocked attempts yet — enable exam mode and students will appear here when they try to access blocked sites</div>
-            {% endif %}
-        </div>
-    </div>
-
     <!-- Connected Devices -->
     <div class="card full-width">
         <div class="card-header">

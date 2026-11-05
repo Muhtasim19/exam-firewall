@@ -285,6 +285,13 @@ def get_allow_only_ips():
     return ips
 
 
+def _add_redirect(ip):
+    for proto in ("udp", "tcp"):
+        rule = _redirect_rule(ip, proto)
+        if _ipt("-C", CHAIN, *rule).returncode != 0:
+            _ipt("-I", CHAIN, "1", *rule)
+
+
 def enable_for(ip, sync=True):
     """Put one device in Allow-Only mode. Returns (ok, message)."""
     ip = _valid_lan_ip(ip)
@@ -296,11 +303,29 @@ def enable_for(ip, sync=True):
         return False, message           # never redirect a device to a DNS server that isn't there
 
     _ensure_chain()
-    for proto in ("udp", "tcp"):
-        rule = _redirect_rule(ip, proto)
-        if _ipt("-C", CHAIN, *rule).returncode != 0:
-            _ipt("-I", CHAIN, "1", *rule)
+    _add_redirect(ip)
     return True, message
+
+
+def enable_many(ips, sync=True):
+    """Put many devices in Allow-Only mode with one config update
+    (used by the 'Block Without Google' button). Returns (ok, message)."""
+    valid = []
+    for ip in ips:
+        ip = _valid_lan_ip(ip)
+        if ip and ip != LISTEN_IP and ip not in valid:     # never lock the server itself
+            valid.append(ip)
+    if not valid:
+        return False, "No student devices found. Press Refresh Devices and try again."
+
+    ok, message = apply_config(sync=sync)
+    if not ok:
+        return False, message
+
+    _ensure_chain()
+    for ip in valid:
+        _add_redirect(ip)
+    return True, f"turned on for {len(valid)} devices - {message}"
 
 
 def disable_for(ip):

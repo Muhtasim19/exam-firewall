@@ -34,6 +34,17 @@
         }
         .yt-btn:hover { background: #f0f0f0; }
         .yt-btn-blocked { opacity: 0.4; }
+        .ao-btn {
+            background: none; border: 1px solid transparent; cursor: pointer; font-size: 18px;
+            padding: 4px 8px; border-radius: 6px; transition: background 0.2s; opacity: 0.45;
+        }
+        .ao-btn:hover { background: #f0f0f0; opacity: 1; }
+        .ao-btn-on { background: #fff4e0; border-color: #e67e22; opacity: 1; }
+        .ao-banner { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+        .ao-banner-err { background: #fdecea; color: #b03a2e; border: 1px solid #f5c6c0; }
+        .ao-banner-ok { background: #e8f8ef; color: #1e8449; border: 1px solid #b7e4c7; }
+        .ao-sites { columns: 3 220px; font-size: 13px; color: #2c3e50; margin-top: 10px; }
+        .ao-sites div { padding: 2px 0; break-inside: avoid; }
     </style>
 </head>
 <body>
@@ -41,6 +52,9 @@
     <a href="{{ url_for('logout') }}" style="text-decoration:none;font-weight:bold;">🔒 Logout</a>
 </div>
 <h1>Exam Firewall Dashboard</h1>
+
+{% if allow_only_error %}<div class="ao-banner ao-banner-err">⚠️ Allow-Only: {{ allow_only_error }}</div>{% endif %}
+{% if allow_only_ok %}<div class="ao-banner ao-banner-ok">✅ Allow-Only: {{ allow_only_ok }}</div>{% endif %}
 
 <div class="section-box">
     <h2>Exam & Network Control</h2>
@@ -113,11 +127,15 @@
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">🗑️ Reset All Blocks</div>
-                    <div class="ref-desc">Clears ALL individual device blocks and YouTube blocks at once. Requires confirmation.</div>
+                    <div class="ref-desc">Clears ALL individual device blocks, YouTube blocks and Allow-Only mode at once. Requires confirmation.</div>
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">📺 YouTube Block</div>
                     <div class="ref-desc">Blocks YouTube for one specific student only. Google Classroom and Docs still work.</div>
+                </div>
+                <div class="ref-item">
+                    <div class="ref-title">🔒 Allow-Only (per device)</div>
+                    <div class="ref-desc">That student can open ONLY Google, YouTube and the sites in the Allow-Only list. The Custom Website Block list still applies. Click again to turn it off.</div>
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">🔄 Refresh Devices</div>
@@ -164,6 +182,33 @@
 </div>
 
 <div class="section-box">
+    <h2>🔒 Allow-Only Sites</h2>
+    <p style="color:#64748b; font-size:14px; margin-bottom:12px;">
+        A device with its 🔒 button on can open <strong>only</strong> these sites. To add one, edit the list on GitHub, then press Sync.
+    </p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <button type="button" onclick="window.open('{{ allowed_info.edit_url }}', '_blank', 'noopener')" style="background-color:#4a6cf7;">✏️ Edit list on GitHub</button>
+        <form action="{{ url_for('allow_only_sync') }}" method="get" style="display:inline;">
+            <button type="submit" style="background-color:#27ae60;">🔄 Sync from GitHub</button>
+        </form>
+        <span style="color:#64748b; font-size:13px;">
+            {{ allowed_info.domains|length }} sites · from {{ allowed_info.source }} · {{ allowed_info.updated }}
+        </span>
+    </div>
+    {% if allowed_info.skipped %}
+    <p style="color:#b03a2e; font-size:13px; margin-top:10px;">
+        ⚠️ Ignored (not a valid site): {{ allowed_info.skipped|join(', ') }}
+    </p>
+    {% endif %}
+    <details style="margin-top:12px;">
+        <summary style="cursor:pointer; color:#4a6cf7; font-size:14px;">Show allowed sites</summary>
+        <div class="ao-sites">
+            {% for site in allowed_info.domains %}<div>{{ site }}</div>{% endfor %}
+        </div>
+    </details>
+</div>
+
+<div class="section-box">
     <h2>Connected Devices</h2>
     <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:15px; align-items:center;">
         <button onclick="refreshDevices()" style="background-color:#4a6cf7;">🔄 Refresh Devices</button>
@@ -183,6 +228,7 @@
                 <th>Firewall Status</th>
                 <th>Action</th>
                 <th title="Block/Unblock YouTube for this student">📺</th>
+                <th title="Allow-Only mode: Google + approved sites only">🔒</th>
             </tr>
         </thead>
         <tbody id="devices-tbody">
@@ -206,12 +252,23 @@
                     {% endif %}
                 </td>
                 <td style="text-align:center;">
-                    {% if d.youtube_blocked %}
+                    {% if d.allow_only %}
+                        <span title="Allow-Only mode is on for this student — it overrides the YouTube block" style="color:#94a3b8;">—</span>
+                    {% elif d.youtube_blocked %}
                         <button onclick="youtubeAction('{{ url_for('youtube_unblock_device', ip=d.ip) }}')"
                                 class="yt-btn yt-btn-blocked" title="YouTube blocked — click to unblock">📺</button>
                     {% else %}
                         <button onclick="youtubeAction('{{ url_for('youtube_block_device', ip=d.ip) }}')"
                                 class="yt-btn" title="Click to block YouTube for this student">📺</button>
+                    {% endif %}
+                </td>
+                <td style="text-align:center;">
+                    {% if d.allow_only %}
+                        <button onclick="youtubeAction('{{ url_for('allow_only_off', ip=d.ip) }}')"
+                                class="ao-btn ao-btn-on" title="Allow-Only is ON — click to turn off">🔒</button>
+                    {% else %}
+                        <button onclick="youtubeAction('{{ url_for('allow_only_on', ip=d.ip) }}')"
+                                class="ao-btn" title="Click to allow ONLY Google + approved sites for this student">🔒</button>
                     {% endif %}
                 </td>
             </tr>
@@ -266,7 +323,7 @@
     }
 
     function confirmResetAllBlocks() {
-        if (confirm('ARE YOU SURE?\n\nThis will unblock ALL individual device blocks and YouTube blocks.\n\nExam Mode DNS blocking will NOT be affected.')) {
+        if (confirm('ARE YOU SURE?\n\nThis will unblock ALL individual device blocks, YouTube blocks and Allow-Only mode.\n\nExam Mode DNS blocking will NOT be affected.')) {
             window.location.href = "{{ url_for('reset_all_blocks') }}" + window.location.hash;
         }
     }

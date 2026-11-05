@@ -307,6 +307,15 @@ def allow_only_off(ip):
     allow_only.disable_for(ip)
     return redirect(url_for("index"))
 
+@app.route("/allowonly/all")
+@login_required
+def allow_only_all():
+    devices = firewall.connected_devices()
+    ok, message = allow_only.enable_many([d["ip"] for d in devices])
+    if ok:
+        return redirect(url_for("index", ao_ok=message))
+    return redirect(url_for("index", ao_err=message))
+
 @app.route("/allowonly/sync")
 @login_required
 def allow_only_sync():

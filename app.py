@@ -6,6 +6,7 @@ from time import time
 import firewall
 import custom_block
 import youtube_block
+import allow_only
 import os
 
 # =========================
@@ -110,9 +111,11 @@ def index():
     network_status = firewall.network_status()
     custom_blocked = custom_block.get_custom_blocked()
     youtube_blocked_ips = youtube_block.get_youtube_blocked_ips()
+    allow_only_ips = allow_only.get_allow_only_ips()
 
     for device in devices:
         device["youtube_blocked"] = device["ip"] in youtube_blocked_ips
+        device["allow_only"] = device["ip"] in allow_only_ips
 
     return render_template(
         "index.html",
@@ -120,8 +123,20 @@ def index():
         strict_status=strict_status,
         devices=devices,
         network_status=network_status,
-        custom_blocked=custom_blocked
+        custom_blocked=custom_blocked,
+        allowed_info=allow_only.get_status(),
+        allow_only_error=request.args.get("ao_err"),
+        allow_only_ok=request.args.get("ao_ok")
     )
+
+# =========================
+# ALLOW-ONLY: keep devices in that mode in sync with block lists
+# =========================
+def refresh_allow_only():
+    try:
+        allow_only.refresh_if_active()
+    except Exception:
+        pass
 
 # =========================
 # EXAM CONTROL
@@ -130,12 +145,14 @@ def index():
 @login_required
 def exam_on():
     firewall.exam_on()
+    refresh_allow_only()
     return redirect(url_for("index"))
 
 @app.route("/exam/off")
 @login_required
 def exam_off():
     firewall.exam_off()
+    refresh_allow_only()
     return redirect(url_for("index"))
 
 # =========================
@@ -145,12 +162,14 @@ def exam_off():
 @login_required
 def strict_on():
     firewall.strict_mode_on()
+    refresh_allow_only()
     return redirect(url_for("index"))
 
 @app.route("/strict/off")
 @login_required
 def strict_off():
     firewall.strict_mode_off()
+    refresh_allow_only()
     return redirect(url_for("index"))
 
 # =========================
@@ -179,6 +198,7 @@ def unblock_device(ip):
 @login_required
 def reset_all_blocks():
     firewall.reset_all_blocks()
+    allow_only.release_all()
     return redirect(url_for("index"))
 
 # =========================
@@ -238,18 +258,21 @@ def custom_block_add():
     domain = request.form.get("domain", "").strip()
     if domain:
         custom_block.add_custom_block(domain)
+        refresh_allow_only()
     return redirect(url_for("index"))
 
 @app.route("/custom/unblock/<domain>")
 @login_required
 def custom_block_remove(domain):
     custom_block.remove_custom_block(domain)
+    refresh_allow_only()
     return redirect(url_for("index"))
 
 @app.route("/custom/clear")
 @login_required
 def custom_block_clear():
     custom_block.clear_all_custom_blocks()
+    refresh_allow_only()
     return redirect(url_for("index"))
 
 # =========================
@@ -266,6 +289,31 @@ def youtube_block_device(ip):
 def youtube_unblock_device(ip):
     youtube_block.unblock_youtube(ip)
     return redirect(url_for("index"))
+
+# =========================
+# ALLOW-ONLY MODE (Google + approved sites only)
+# =========================
+@app.route("/allowonly/on/<ip>")
+@login_required
+def allow_only_on(ip):
+    ok, message = allow_only.enable_for(ip)
+    if ok:
+        return redirect(url_for("index"))
+    return redirect(url_for("index", ao_err=message))
+
+@app.route("/allowonly/off/<ip>")
+@login_required
+def allow_only_off(ip):
+    allow_only.disable_for(ip)
+    return redirect(url_for("index"))
+
+@app.route("/allowonly/sync")
+@login_required
+def allow_only_sync():
+    ok, message = allow_only.apply_config(sync=True)
+    if ok:
+        return redirect(url_for("index", ao_ok=message))
+    return redirect(url_for("index", ao_err=message))
 
 # =========================
 # RUN

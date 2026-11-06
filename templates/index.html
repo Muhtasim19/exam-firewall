@@ -35,11 +35,13 @@
         .yt-btn:hover { background: #f0f0f0; }
         .yt-btn-blocked { opacity: 0.4; }
         .ao-btn {
-            background: none; border: 1px solid transparent; cursor: pointer; font-size: 18px;
-            padding: 4px 8px; border-radius: 6px; transition: background 0.2s; opacity: 0.45;
+            background: #fff; color: #64748b; border: 1px solid #cbd5e1; cursor: pointer;
+            font-size: 12px; font-weight: 600; white-space: nowrap;
+            padding: 5px 10px; border-radius: 6px; transition: background 0.2s;
         }
-        .ao-btn:hover { background: #f0f0f0; opacity: 1; }
-        .ao-btn-on { background: #fff4e0; border-color: #e67e22; opacity: 1; }
+        .ao-btn:hover { background: #f1f5f9; }
+        .ao-btn-on { background: #e67e22; color: #fff; border-color: #e67e22; }
+        .ao-btn-on:hover { background: #d35400; }
         .ao-banner { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
         .ao-banner-err { background: #fdecea; color: #b03a2e; border: 1px solid #f5c6c0; }
         .ao-banner-ok { background: #e8f8ef; color: #1e8449; border: 1px solid #b7e4c7; }
@@ -143,7 +145,7 @@
                     <div class="ref-desc">Blocks YouTube for one specific student only. Google Classroom and Docs still work.</div>
                 </div>
                 <div class="ref-item">
-                    <div class="ref-title">🔒 Allow-Only (per device)</div>
+                    <div class="ref-title">Allow-Only (per device)</div>
                     <div class="ref-desc">That student can open ONLY Google, YouTube and the sites in the Allow-Only list. The Custom Website Block list still applies. Click again to turn it off.</div>
                 </div>
                 <div class="ref-item">
@@ -201,7 +203,7 @@
     </button>
     <div class="ao-body{% if allow_only_ok or allow_only_error %} open{% endif %}" id="aoBody">
         <p style="color:#64748b; font-size:14px; margin-bottom:12px;">
-            A device with its 🔒 button on can open <strong>only</strong> these sites. To add one, edit the list on GitHub, then press Sync.
+            A device with its Allow-Only button on can open <strong>only</strong> these sites. To add one, edit the list on GitHub, then press Sync.
         </p>
         <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
             <button type="button" onclick="window.open('{{ allowed_info.edit_url }}', '_blank', 'noopener')" style="background-color:#4a6cf7;">✏️ Edit list on GitHub</button>
@@ -244,7 +246,7 @@
                 <th>Firewall Status</th>
                 <th>Action</th>
                 <th title="Block/Unblock YouTube for this student">📺</th>
-                <th title="Allow-Only mode: Google + approved sites only">🔒</th>
+                <th title="Allow-Only mode: Google + approved sites only">Allow-Only</th>
             </tr>
         </thead>
         <tbody id="devices-tbody">
@@ -281,10 +283,10 @@
                 <td style="text-align:center;">
                     {% if d.allow_only %}
                         <button onclick="youtubeAction('{{ url_for('allow_only_off', ip=d.ip) }}')"
-                                class="ao-btn ao-btn-on" title="Allow-Only is ON — click to turn off">🔒</button>
+                                class="ao-btn ao-btn-on" title="Allow-Only is ON — click to turn off">Allow-Only ON</button>
                     {% else %}
                         <button onclick="youtubeAction('{{ url_for('allow_only_on', ip=d.ip) }}')"
-                                class="ao-btn" title="Click to allow ONLY Google + approved sites for this student">🔒</button>
+                                class="ao-btn" title="Click to allow ONLY Google + approved sites for this student">Allow-Only</button>
                     {% endif %}
                 </td>
             </tr>
@@ -358,7 +360,7 @@
     }
 
     function confirmAllowOnlyAll() {
-        if (confirm('ARE YOU SURE?\n\nThis turns on Allow-Only mode for ALL connected devices.\n\nThey can open ONLY Google, YouTube and the approved sites. Everything else is blocked.\n\nTo turn it off: use the 🔒 button on a device, or Reset All Blocks.')) {
+        if (confirm('ARE YOU SURE?\n\nThis turns on Allow-Only mode for ALL connected devices.\n\nThey can open ONLY Google, YouTube and the approved sites. Everything else is blocked.\n\nTo turn it off: use the Allow-Only button on a device, or Reset All Blocks.')) {
             window.location.href = "{{ url_for('allow_only_all') }}" + window.location.hash;
         }
     }

@@ -1,5 +1,5 @@
 # ==============================================================
-#  ALLOWED SITES  -  used by Allow-Only mode (the 🔒 button)
+#  ALLOWED SITES  -  used by Allow-Only mode
 #
 #  A device in Allow-Only mode can open ONLY the sites below.
 #  Everything else is refused.
@@ -8,13 +8,12 @@
 #    1. Click the pencil on GitHub and add one site per line
 #       (paste the full URL or just the domain).
 #    2. Commit. Then press "Sync from GitHub" on the dashboard
-#       (or just turn Allow-Only on for a device - it syncs first).
 #
 #  Rules:
 #    - A domain also allows ALL of its subdomains:
 #        google.com  ->  drive.google.com, classroom.google.com, ...
 #    - To allow just one site, write its full address:
-#        crls-autograder.herokuapp.com  (NOT herokuapp.com)
+#        site.example.com  (NOT examples.com)
 #    - Anything on the Custom Website Block list stays blocked,
 #      even if it is allowed here.
 #    - Lines starting with # are notes and are ignored.
@@ -25,6 +24,8 @@
 https://crls-autograder.herokuapp.com/
 https://dr-wu-crew.herokuapp.com/
 https://drwuvideos-autograder.herokuapp.com/
+cdn.jsdelivr.net
+cdn.jsdelivr.net
 
 
 # --- Google: Drive, Classroom, Docs, sign-in, etc. ---

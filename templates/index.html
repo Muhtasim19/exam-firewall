@@ -146,11 +146,11 @@
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">Allow-Only (per device)</div>
-                    <div class="ref-desc">That student can open ONLY Google, YouTube and the sites in the Allow-Only list. The Custom Website Block list still applies. Click again to turn it off.</div>
+                    <div class="ref-desc">That student can open ONLY Google, YouTube and the sites in the Allow-Only list. The Custom Website Block list still applies. To keep YouTube off for that student, also turn on their 📺 button. Click again to turn it off.</div>
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">🔒 Block Without Google</div>
-                    <div class="ref-desc">Turns Allow-Only mode on for ALL connected devices at once: only Google, YouTube and the approved sites work. Requires confirmation.</div>
+                    <div class="ref-desc">Turns Allow-Only mode on for ALL connected devices at once: only Google, YouTube and the approved sites work (students with 📺 blocked stay without YouTube). Requires confirmation.</div>
                 </div>
                 <div class="ref-item">
                     <div class="ref-title">🔄 Refresh Devices</div>
@@ -270,9 +270,7 @@
                     {% endif %}
                 </td>
                 <td style="text-align:center;">
-                    {% if d.allow_only %}
-                        <span title="Allow-Only mode is on for this student — it overrides the YouTube block" style="color:#94a3b8;">—</span>
-                    {% elif d.youtube_blocked %}
+                    {% if d.youtube_blocked %}
                         <button onclick="youtubeAction('{{ url_for('youtube_unblock_device', ip=d.ip) }}')"
                                 class="yt-btn yt-btn-blocked" title="YouTube blocked — click to unblock">📺</button>
                     {% else %}
@@ -360,7 +358,7 @@
     }
 
     function confirmAllowOnlyAll() {
-        if (confirm('ARE YOU SURE?\n\nThis turns on Allow-Only mode for ALL connected devices.\n\nThey can open ONLY Google, YouTube and the approved sites. Everything else is blocked.\n\nTo turn it off: use the Allow-Only button on a device, or Reset All Blocks.')) {
+        if (confirm('ARE YOU SURE?\n\nThis turns on Allow-Only mode for ALL connected devices.\n\nThey can open ONLY Google, YouTube and the approved sites. Everything else is blocked.\n\nStudents who have the 📺 YouTube block on will stay without YouTube.\n\nTo turn it off: use the Allow-Only button on a device, or Reset All Blocks.')) {
             window.location.href = "{{ url_for('allow_only_all') }}" + window.location.hash;
         }
     }

@@ -278,17 +278,28 @@ def custom_block_clear():
 # =========================
 # YOUTUBE BLOCK
 # =========================
+def after_youtube_change(ip):
+    """If this student is in Allow-Only mode, move them to the matching profile
+    (with or without YouTube)."""
+    try:
+        ok, message = allow_only.refresh_device(ip)
+    except Exception as e:
+        ok, message = False, f"Could not update Allow-Only for this student: {e}"
+    if ok:
+        return redirect(url_for("index"))
+    return redirect(url_for("index", ao_err=message))
+
 @app.route("/youtube/block/<ip>")
 @login_required
 def youtube_block_device(ip):
     youtube_block.block_youtube(ip)
-    return redirect(url_for("index"))
+    return after_youtube_change(ip)
 
 @app.route("/youtube/unblock/<ip>")
 @login_required
 def youtube_unblock_device(ip):
     youtube_block.unblock_youtube(ip)
-    return redirect(url_for("index"))
+    return after_youtube_change(ip)
 
 # =========================
 # ALLOW-ONLY MODE (Google + approved sites only)
